@@ -1,0 +1,248 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+video {
+  display: none;
+}
+
+canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+#canvasStack {
+  position: absolute;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+#three-canvas,
+#fx-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+#three-canvas.hidden,
+#fx-canvas.hidden {
+  display: none;
+}
+
+#hud {
+  position: absolute;
+  top: 18px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 0 16px;
+}
+
+#hud.hidden {
+  display: none;
+}
+
+#hudLeft,
+#hudRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 26px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.88));
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+#hudLeft {
+  color: #fbbf24;
+}
+
+#hudRight {
+  color: #f87171;
+}
+
+#pauseBtn {
+  padding: 12px 26px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.88));
+  color: #e2e8f0;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(15, 23, 42, 0.88);
+  text-align: center;
+  padding: 24px;
+}
+
+#overlay.hidden {
+  display: none;
+}
+
+#overlay h1 {
+  margin: 0;
+  font-size: 2.2rem;
+}
+
+#overlay p {
+  max-width: 480px;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.selectRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  color: #94a3b8;
+}
+
+.selectRow select {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  max-width: 260px;
+}
+
+.game-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 16px;
+  max-width: 720px;
+  margin-top: 8px;
+}
+
+#overlay .game-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 260px;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #e2e8f0;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+#overlay .game-card:hover {
+  border-color: #60a5fa;
+  transform: translateY(-2px);
+}
+
+#overlay .game-card .card-thumb {
+  width: 100%;
+  height: 130px;
+  object-fit: cover;
+  display: block;
+  background: #0f172a;
+}
+
+#overlay .game-card .card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px 18px 18px;
+}
+
+#overlay .game-card strong {
+  font-size: 1.15rem;
+}
+
+#overlay .game-card span {
+  font-size: 0.88rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.upgrade-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+}
+
+#overlay button {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 12px 28px;
+  font-size: 1.05rem;
+  border-radius: 999px;
+  border: none;
+  background: #60a5fa;
+  color: #0f172a;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+#overlay button.secondary {
+  background: transparent;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+}
+
+#overlay button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#status {
+  color: #64748b;
+  font-size: 0.9rem;
+  min-height: 1.2em;
+}
