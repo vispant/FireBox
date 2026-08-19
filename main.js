@@ -5,6 +5,8 @@ import {
 import { createCatchGame } from "./catchGame.js?v=10";
 import { createFighterGame } from "./fighterGame.js?v=11";
 import { createPersonSegmenter } from "./segmentation.js?v=3";
+import { signUp, signIn, signOut, getCurrentUser, fetchCountry } from "./auth.js?v=1";
+import { TURNSTILE_SITE_KEY } from "./config.js?v=1";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -56,8 +58,28 @@ function wireBgSelect() {
   });
 }
 
-let screen = "loading"; // loading | menu | playing | paused | gameover
+let screen = "loading"; // loading | auth | menu | playing | paused | gameover
 let activeGame = null;
+let currentUser = null;
+let turnstileWidgetId = null;
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[c]));
+}
+
+function waitForTurnstile(cb, attempts = 0) {
+  if (window.turnstile) {
+    cb();
+  } else if (attempts < 100) {
+    setTimeout(() => waitForTurnstile(cb, attempts + 1), 100);
+  }
+}
 const games = [
   createCatchGame({ canvas, ctx, video }),
   createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, fxCtx }),
@@ -202,10 +224,99 @@ function populateCameraSelect(selectEl) {
   if (activeDeviceId) selectEl.value = activeDeviceId;
 }
 
+function renderAuth(mode = "signup") {
+  const turnstileConfigured = TURNSTILE_SITE_KEY && TURNSTILE_SITE_KEY !== "REPLACE_WITH_TURNSTILE_SITE_KEY";
+
+  overlay.innerHTML = `
+    <h1>FireBox</h1>
+    <p>Sign up to save your progress and get on the leaderboard — or jump straight in as a guest.</p>
+    <form id="authForm" class="auth-form">
+      ${mode === "signup" ? `<input type="text" id="authName" placeholder="Your name" required />` : ""}
+      <input type="email" id="authEmail" placeholder="Email" required />
+      <input type="password" id="authPassword" placeholder="Password" required minlength="6" />
+      ${turnstileConfigured ? `<div id="turnstileBox" class="turnstile-box"></div>` : ""}
+      <button type="submit">${mode === "signup" ? "Sign Up" : "Sign In"}</button>
+    </form>
+    <button class="auth-toggle" type="button" data-action="auth-mode" data-mode="${
+      mode === "signup" ? "signin" : "signup"
+    }">${mode === "signup" ? "Already have an account? Sign In" : "New here? Sign Up"}</button>
+    <button class="secondary" data-action="continue-guest">Continue as Guest</button>
+    <p id="authStatus"></p>
+  `;
+
+  let captchaToken = null;
+  if (turnstileConfigured) {
+    waitForTurnstile(() => {
+      turnstileWidgetId = window.turnstile.render("#turnstileBox", {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (token) => {
+          captchaToken = token;
+        },
+        "expired-callback": () => {
+          captchaToken = null;
+        },
+      });
+    });
+  }
+
+  const form = document.getElementById("authForm");
+  const statusEl = document.getElementById("authStatus");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (turnstileConfigured && !captchaToken) {
+      statusEl.textContent = "Please complete the verification check.";
+      statusEl.style.color = "#ef4444";
+      return;
+    }
+    const email = document.getElementById("authEmail").value.trim();
+    const password = document.getElementById("authPassword").value;
+    statusEl.style.color = "#94a3b8";
+    statusEl.textContent = mode === "signup" ? "Creating account..." : "Signing in...";
+    try {
+      if (mode === "signup") {
+        const name = document.getElementById("authName").value.trim();
+        const country = await fetchCountry();
+        const result = await signUp({ email, password, name, captchaToken, country });
+        if (!result.session) {
+          statusEl.style.color = "#4ade80";
+          statusEl.textContent = "Account created! Check your email to confirm, then sign in.";
+          renderAuth("signin");
+          return;
+        }
+        currentUser = result.user;
+      } else {
+        const result = await signIn({ email, password, captchaToken });
+        currentUser = result.user;
+      }
+      showMenu();
+    } catch (err) {
+      statusEl.style.color = "#ef4444";
+      statusEl.textContent = err.message || "Something went wrong.";
+      if (window.turnstile && turnstileWidgetId != null) window.turnstile.reset(turnstileWidgetId);
+      captchaToken = null;
+    }
+  });
+}
+
+function showAuth() {
+  setScreen("auth");
+  overlay.classList.remove("hidden");
+  threeCanvas.classList.add("hidden");
+  fxCanvas.classList.add("hidden");
+  renderAuth("signup");
+}
+
 function renderMenu() {
   overlay.innerHTML = `
     <h1>FireBox</h1>
     <p>Pick a game. Stand back so your whole body is in view — Fist Fighter tracks your feet too.</p>
+    ${
+      currentUser
+        ? `<div class="selectRow"><span>Signed in as ${escapeHtml(
+            currentUser.user_metadata?.name || currentUser.email
+          )}</span><button class="auth-toggle" type="button" data-action="sign-out">Sign Out</button></div>`
+        : ""
+    }
     <div class="selectRow">
       <label for="cameraSelect">Camera:</label>
       <select id="cameraSelect"></select>
@@ -327,7 +438,16 @@ overlay.addEventListener("click", (e) => {
   if (!btn) return;
   const action = btn.dataset.action;
 
-  if (action === "select-game") {
+  if (action === "auth-mode") {
+    renderAuth(btn.dataset.mode);
+  } else if (action === "continue-guest") {
+    showMenu();
+  } else if (action === "sign-out") {
+    signOut().then(() => {
+      currentUser = null;
+      showMenu();
+    });
+  } else if (action === "select-game") {
     startGame(btn.dataset.gameId);
   } else if (action === "resume") {
     togglePause();
@@ -389,7 +509,13 @@ async function init() {
       console.warn("Person segmentation unavailable, backgrounds will use the plain camera view instead.", err);
     }
 
-    showMenu();
+    document.getElementById("status").textContent = "Checking sign-in...";
+    currentUser = await getCurrentUser();
+    if (currentUser) {
+      showMenu();
+    } else {
+      showAuth();
+    }
     requestAnimationFrame(predict);
   } catch (err) {
     console.error(err);
