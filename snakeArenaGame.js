@@ -1,4 +1,14 @@
-import { createRoomChannel, subscribeRoom, closeRoom, countPresence, generateRoomCode } from "./multiplayer.js?v=1";
+import {
+  createRoomChannel,
+  subscribeRoom,
+  closeRoom,
+  countPresence,
+  generateRoomCode,
+  findAvailableRoom,
+  registerPublicRoom,
+  heartbeatRoom,
+  removeRoom,
+} from "./multiplayer.js?v=2";
 
 const ARENA_RADIUS = 1500;
 const SPEED = 180; // px/s
@@ -16,6 +26,8 @@ const FOOD_SYNC_INTERVAL = 2000; // ms
 const TARGET_FOOD_COUNT = 180;
 const JOIN_TIMEOUT_MS = 45000;
 const HOST_LEFT_NOTICE_MS = 5000;
+const ONLINE_ARENA_CAPACITY = 8;
+const ROOM_HEARTBEAT_INTERVAL = 6000; // ms
 
 const TARGET_BOT_COUNT = 19; // + the player = 20 snakes in the arena
 const BOT_RESPAWN_DELAY = 4; // seconds
@@ -84,6 +96,9 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   let channel = null;
   let hostPresenceKey = null;
   let pendingOnReady = null;
+  let isPublicRoom = false;
+  let roomCode = null;
+  let roomHeartbeatTimer = 0;
 
   let mySnake = null;
   let opponents = new Map(); // ownerId -> {ownerId,head,heading,segments,score,name}  (online)
@@ -336,6 +351,13 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
         foodSyncTimer = 0;
         broadcastFoodSync();
       }
+      if (isPublicRoom && roomCode) {
+        roomHeartbeatTimer += dt;
+        if (roomHeartbeatTimer >= ROOM_HEARTBEAT_INTERVAL) {
+          roomHeartbeatTimer = 0;
+          heartbeatRoom(roomCode, countPresence(channel));
+        }
+      }
     }
   }
 
@@ -358,10 +380,39 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
       wanderHeading: pos.angle + Math.PI,
       targetOrbId: null,
       retargetTimer: 0,
+      stuckCheckTimer: 3,
+      stuckCheckPos: { x: pos.x, y: pos.y },
     });
   }
 
+  // Watchdog: whatever the exact cause, a bot that hasn't covered real ground in the
+  // last few seconds is stuck (tight orbit, mutual-avoidance deadlock, or worse) —
+  // force it onto a fresh heading rather than trying to out-think every possible cause.
+  function applyStuckWatchdog(bot, dtSec) {
+    bot.stuckCheckTimer -= dtSec;
+    if (bot.stuckCheckTimer > 0) return;
+    bot.stuckCheckTimer = 3;
+    const moved = Math.hypot(bot.head.x - bot.stuckCheckPos.x, bot.head.y - bot.stuckCheckPos.y);
+    bot.stuckCheckPos = { x: bot.head.x, y: bot.head.y };
+    if (moved < 150) {
+      bot.wanderHeading = Math.random() * Math.PI * 2;
+      bot.wanderTimer = 2 + Math.random() * 2;
+      bot.targetOrbId = null;
+      bot.retargetTimer = 1.5;
+      bot.heading = bot.wanderHeading;
+    }
+  }
+
   function computeBotDesiredHeading(bot, dtSec) {
+    applyStuckWatchdog(bot, dtSec);
+
+    // Wall proximity is a hard priority: return immediately so nothing below (food,
+    // wander, obstacle-dodging) can fight it and drag the bot back toward the edge —
+    // that tug-of-war was a second source of the "circling" bots kept getting stuck in.
+    if (Math.hypot(bot.head.x, bot.head.y) > ARENA_RADIUS * 0.82) {
+      return Math.atan2(-bot.head.y, -bot.head.x);
+    }
+
     // Commit to a target orb for a short while instead of re-picking "nearest" every
     // frame — otherwise a bot sitting between two near-equidistant orbs flips its target
     // back and forth as it moves, and never actually closes in on either (visible as
@@ -396,10 +447,6 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
         bot.wanderHeading = Math.random() * Math.PI * 2;
       }
       desired = bot.wanderHeading;
-    }
-
-    if (Math.hypot(bot.head.x, bot.head.y) > ARENA_RADIUS * 0.82) {
-      desired = Math.atan2(-bot.head.y, -bot.head.x);
     }
 
     // Obstacle avoidance: steer directly away from the nearest threatening segment,
@@ -718,6 +765,9 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
           },
         });
       }
+      if (isHost && isPublicRoom && roomCode) {
+        removeRoom(roomCode);
+      }
       closeRoom(channel);
       channel = null;
     }
@@ -729,16 +779,28 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   function renderChoiceScreen(overlayEl, onReady, onCancel) {
     overlayEl.innerHTML = `
       <h1>Snake Arena</h1>
-      <p>Play live with friends on other devices, or practice offline against bots.</p>
-      <button data-lobby-action="create">Create Arena</button>
-      <button class="secondary" data-lobby-action="join">Join Arena</button>
+      <p>Jump into a live public game, play privately with a friend via a code, or practice offline.</p>
+      <button data-lobby-action="play-online">Play Online</button>
+      <button class="secondary" data-lobby-action="create">Create Private Arena</button>
+      <button class="secondary" data-lobby-action="join">Join Private Arena</button>
       <button class="secondary" data-lobby-action="offline">Play Offline (Bots)</button>
       <button class="auth-toggle" type="button" data-lobby-action="cancel">← Back</button>
     `;
+    overlayEl.querySelector('[data-lobby-action="play-online"]').addEventListener("click", () => playOnline(overlayEl, onReady, onCancel));
     overlayEl.querySelector('[data-lobby-action="create"]').addEventListener("click", () => createArena(overlayEl, onReady, onCancel));
     overlayEl.querySelector('[data-lobby-action="join"]').addEventListener("click", () => renderJoinScreen(overlayEl, onReady, onCancel));
     overlayEl.querySelector('[data-lobby-action="offline"]').addEventListener("click", () => startOffline(onReady));
     overlayEl.querySelector('[data-lobby-action="cancel"]').addEventListener("click", onCancel);
+  }
+
+  async function playOnline(overlayEl, onReady, onCancel) {
+    overlayEl.innerHTML = `<h1>Snake Arena</h1><p>Finding a game...</p>`;
+    const code = await findAvailableRoom(ONLINE_ARENA_CAPACITY);
+    if (code) {
+      await joinArena(overlayEl, code, onReady, onCancel, true);
+    } else {
+      await createArena(overlayEl, onReady, onCancel, true, true);
+    }
   }
 
   function startOffline(onReady) {
@@ -773,12 +835,15 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     });
   }
 
-  async function createArena(overlayEl, onReady, onCancel) {
+  async function createArena(overlayEl, onReady, onCancel, isPublic = false, skipWaitingRoom = false) {
     mode = "online";
     const code = generateRoomCode();
     myId = crypto.randomUUID();
     myName = getPlayerName ? getPlayerName() : "Guest";
     isHost = true;
+    isPublicRoom = isPublic;
+    roomCode = code;
+    roomHeartbeatTimer = 0;
 
     overlayEl.innerHTML = `<h1>Snake Arena</h1><p>Setting up...</p>`;
 
@@ -787,14 +852,22 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     await subscribeRoom(channel, { ownerId: myId, name: myName, isHost: true });
     hostPresenceKey = myId;
 
-    renderWaitingRoom(overlayEl, code, onReady, onCancel, true);
+    if (isPublic) await registerPublicRoom(code, myId);
+
+    if (skipWaitingRoom) {
+      onReady();
+    } else {
+      renderWaitingRoom(overlayEl, code, onReady, onCancel, true);
+    }
   }
 
-  async function joinArena(overlayEl, code, onReady, onCancel) {
+  async function joinArena(overlayEl, code, onReady, onCancel, skipWaitingRoom = false) {
     mode = "online";
     myId = crypto.randomUUID();
     myName = getPlayerName ? getPlayerName() : "Guest";
     isHost = false;
+    isPublicRoom = skipWaitingRoom;
+    roomCode = code;
 
     overlayEl.innerHTML = `<h1>Snake Arena</h1><p>Joining...</p>`;
 
@@ -802,7 +875,11 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     wireChannelHandlers();
     await subscribeRoom(channel, { ownerId: myId, name: myName, isHost: false });
 
-    renderWaitingRoom(overlayEl, code, onReady, onCancel, false);
+    if (skipWaitingRoom) {
+      onReady();
+    } else {
+      renderWaitingRoom(overlayEl, code, onReady, onCancel, false);
+    }
   }
 
   function renderWaitingRoom(overlayEl, code, onReady, onCancel, hostRole) {
@@ -862,10 +939,16 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   }
 
   function renderLobby(overlayEl, { onReady, onCancel }) {
+    if (isHost && isPublicRoom && roomCode) {
+      removeRoom(roomCode);
+    }
     closeRoom(channel);
     channel = null;
     hostPresenceKey = null;
     pendingOnReady = null;
+    isPublicRoom = false;
+    roomCode = null;
+    roomHeartbeatTimer = 0;
     opponents = new Map();
     bots = new Map();
     presenceNames = new Map();
