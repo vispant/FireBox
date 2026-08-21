@@ -5,6 +5,7 @@ const PIPE_WIDTH = 72;
 const PIPE_GAP = 175;
 const PIPE_SPACING = 280;
 const BASE_PIPE_SPEED = 230; // px/s
+const COUNTDOWN_SECONDS = 3;
 const BEST_KEY = "fireBox.flappy.best.v1";
 
 function loadBest() {
@@ -32,6 +33,7 @@ export function createFlappyGame({ canvas, ctx }) {
   let isNewBest = false;
   let flapQueued = false;
   let spawnTimer = 0;
+  let countdown = 0;
 
   function requestFlap() {
     if (!gameOver) flapQueued = true;
@@ -61,6 +63,7 @@ export function createFlappyGame({ canvas, ctx }) {
     isNewBest = false;
     flapQueued = false;
     spawnTimer = 0;
+    countdown = COUNTDOWN_SECONDS;
     spawnPipe();
   }
 
@@ -76,6 +79,12 @@ export function createFlappyGame({ canvas, ctx }) {
   function update(dt) {
     if (gameOver) return;
     const dtSec = Math.min(dt, 50) / 1000;
+
+    if (countdown > 0) {
+      countdown = Math.max(0, countdown - dtSec);
+      flapQueued = false;
+      return;
+    }
 
     if (flapQueued) {
       velocity = FLAP_VELOCITY;
@@ -146,6 +155,19 @@ export function createFlappyGame({ canvas, ctx }) {
     ctx.arc(6, -4, 3, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+
+    if (countdown > 0) {
+      ctx.fillStyle = "rgba(15, 23, 42, 0.35)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#f8fafc";
+      ctx.font = "bold 120px system-ui, sans-serif";
+      ctx.fillText(String(Math.ceil(countdown)), canvas.width / 2, canvas.height / 2 + 40);
+
+      ctx.font = "bold 26px system-ui, sans-serif";
+      ctx.fillText("Get ready! Space or click to flap", canvas.width / 2, canvas.height / 2 + 100);
+    }
   }
 
   function isOver() {

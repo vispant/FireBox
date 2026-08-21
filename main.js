@@ -7,8 +7,8 @@ import { createFighterGame } from "./fighterGame.js?v=11";
 import { createPersonSegmenter } from "./segmentation.js?v=3";
 import { signUp, signIn, signOut, getCurrentUser, fetchCountry } from "./auth.js?v=1";
 import { TURNSTILE_SITE_KEY } from "./config.js?v=1";
-import { createFlappyGame } from "./flappyGame.js?v=1";
-import { createSnakeGame } from "./snakeGame.js?v=1";
+import { createFlappyGame } from "./flappyGame.js?v=2";
+import { createSnakeGame } from "./snakeGame.js?v=2";
 import { createWhackGame } from "./whackGame.js?v=1";
 
 const video = document.getElementById("webcam");

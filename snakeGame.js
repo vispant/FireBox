@@ -137,6 +137,32 @@ export function createSnakeGame({ canvas, ctx }) {
       const pad = i === 0 ? 1 : 2;
       ctx.fillRect(seg.x * CELL + pad, seg.y * CELL + pad, CELL - pad * 2, CELL - pad * 2);
     });
+
+    const head = snake[0];
+    const cx = head.x * CELL + CELL / 2;
+    const cy = head.y * CELL + CELL / 2;
+    const fx = direction.x;
+    const fy = direction.y;
+    const px = -fy;
+    const py = fx;
+
+    ctx.fillStyle = "#0f172a";
+    [-1, 1].forEach((s) => {
+      const ex = cx + fx * CELL * 0.12 + px * CELL * 0.22 * s;
+      const ey = cy + fy * CELL * 0.12 + py * CELL * 0.22 * s;
+      ctx.beginPath();
+      ctx.arc(ex, ey, CELL * 0.09, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    const mouthX = cx + fx * CELL * 0.42;
+    const mouthY = cy + fy * CELL * 0.42;
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(mouthX - px * CELL * 0.15, mouthY - py * CELL * 0.15);
+    ctx.lineTo(mouthX + px * CELL * 0.15, mouthY + py * CELL * 0.15);
+    ctx.stroke();
   }
 
   function isOver() {
