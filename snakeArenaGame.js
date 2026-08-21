@@ -7,8 +7,6 @@ const KEY_TURN_RATE = 4.0; // rad/s, keyboard steering
 const SEGMENT_SPACING = 6;
 const BASE_LENGTH_SEGMENTS = 20;
 const GROWTH_PER_FOOD_SEGMENTS = 3;
-const KILL_GROWTH_SEGMENTS = 15;
-const KILL_BONUS = 20;
 const COLLISION_RADIUS = 14;
 const EAT_RADIUS = 16;
 const STEP_BROADCAST_INTERVAL = 80; // ms
@@ -16,6 +14,11 @@ const FOOD_SYNC_INTERVAL = 2000; // ms
 const TARGET_FOOD_COUNT = 180;
 const JOIN_TIMEOUT_MS = 45000;
 const HOST_LEFT_NOTICE_MS = 5000;
+
+const TARGET_BOT_COUNT = 8;
+const BOT_RESPAWN_DELAY = 4; // seconds
+const BOT_SENSE_RADIUS = 400;
+const BOT_NAMES = ["Wiggly", "Zippy", "Muncher", "Blitz", "Scales", "Turbo", "Slinky", "Rex", "Noodle", "Fang"];
 
 const SNAKE_COLORS = ["#4ade80", "#60a5fa", "#f472b6", "#fbbf24", "#c084fc", "#f87171", "#2dd4bf", "#fb923c"];
 
@@ -59,6 +62,7 @@ function makeOrbId() {
 }
 
 export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
+  let mode = "online"; // "online" | "offline"
   let myId = null;
   let myName = "Guest";
   let isHost = false;
@@ -67,7 +71,8 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   let pendingOnReady = null;
 
   let mySnake = null;
-  let opponents = new Map(); // ownerId -> {ownerId,head,heading,segments,score,name}
+  let opponents = new Map(); // ownerId -> {ownerId,head,heading,segments,score,name}  (online)
+  let bots = new Map(); // ownerId -> full snake state (offline)
   let presenceNames = new Map(); // ownerId -> name
   let orbs = new Map(); // id -> {x,y}
   const camera = { x: 0, y: 0 };
@@ -83,6 +88,9 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   let dead = false;
   let deathReason = "";
   let isPlaying = false;
+  let botRespawnTimer = 0;
+  let botNameIndex = 0;
+  let botCounter = 0;
 
   window.addEventListener("keydown", (e) => {
     if (!isPlaying) return;
@@ -134,6 +142,11 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     channel.send({ type: "broadcast", event: "food-sync", payload: { orbs: list } });
   }
 
+  function absorbVictim(killer, victim) {
+    killer.score += victim.score || 0;
+    killer.maxSegments += victim.maxSegments || 0;
+  }
+
   function wireChannelHandlers() {
     channel.on("broadcast", { event: "snake-step" }, ({ payload }) => {
       if (payload.ownerId === myId) return;
@@ -160,8 +173,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     channel.on("broadcast", { event: "snake-died" }, ({ payload }) => {
       opponents.delete(payload.ownerId);
       if (payload.killerId === myId && mySnake && mySnake.alive) {
-        mySnake.score += KILL_BONUS;
-        mySnake.maxSegments += KILL_GROWTH_SEGMENTS;
+        absorbVictim(mySnake, { score: payload.score, maxSegments: payload.maxSegments });
       }
       if (isHost && Array.isArray(payload.segments)) {
         payload.segments
@@ -196,51 +208,88 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     });
   }
 
-  function die(killerId, reasonText) {
+  function die(killerId, reasonText, killerSnakeForAbsorb) {
     if (!mySnake || !mySnake.alive) return;
     mySnake.alive = false;
     dead = true;
     deathReason = reasonText;
     isPlaying = false;
-    if (channel) {
+    if (mode === "online" && channel) {
       channel.send({
         type: "broadcast",
         event: "snake-died",
-        payload: { ownerId: myId, killerId, segments: mySnake.segments },
+        payload: {
+          ownerId: myId,
+          killerId,
+          segments: mySnake.segments,
+          maxSegments: mySnake.maxSegments,
+          score: mySnake.score,
+        },
       });
+    } else if (mode === "offline" && killerSnakeForAbsorb) {
+      absorbVictim(killerSnakeForAbsorb, mySnake);
     }
   }
 
-  function checkCollisions() {
-    if (!mySnake.alive) return;
-    const head = mySnake.head;
-
-    if (Math.hypot(head.x, head.y) > ARENA_RADIUS) {
-      die(null, "You hit the wall!");
-      return;
+  // Generic collision test: does `snake`'s head touch anything in `others` (a Map, excluding excludeId)?
+  function checkSnakeCollisions(snake, others, excludeId) {
+    if (Math.hypot(snake.head.x, snake.head.y) > ARENA_RADIUS) {
+      return { type: "wall" };
     }
-
-    for (const opp of opponents.values()) {
-      if (!opp.segments || opp.segments.length === 0) continue;
-      const dHead = Math.hypot(head.x - opp.head.x, head.y - opp.head.y);
-      if (dHead < COLLISION_RADIUS) {
-        die(null, `Collided head-on with ${opp.name}!`);
-        return;
+    for (const [id, other] of others) {
+      if (id === excludeId || other.alive === false || !other.segments || other.segments.length === 0) continue;
+      if (Math.hypot(snake.head.x - other.head.x, snake.head.y - other.head.y) < COLLISION_RADIUS) {
+        return { type: "head", otherId: id, other };
       }
     }
-
-    for (const [ownerId, opp] of opponents) {
-      if (!opp.segments) continue;
-      for (const seg of opp.segments) {
-        if (Math.hypot(head.x - seg.x, head.y - seg.y) < COLLISION_RADIUS) {
-          die(ownerId, `Eaten by ${opp.name}!`);
-          return;
+    for (const [id, other] of others) {
+      if (id === excludeId || other.alive === false || !other.segments) continue;
+      for (const seg of other.segments) {
+        if (Math.hypot(snake.head.x - seg.x, snake.head.y - seg.y) < COLLISION_RADIUS) {
+          return { type: "body", otherId: id, other };
         }
       }
     }
+    return null;
+  }
+
+  function advanceSnake(snake, dtSec) {
+    snake.head.x += Math.cos(snake.heading) * SPEED * dtSec;
+    snake.head.y += Math.sin(snake.heading) * SPEED * dtSec;
+    const front = snake.segments[0];
+    if (!front || Math.hypot(snake.head.x - front.x, snake.head.y - front.y) >= SEGMENT_SPACING) {
+      snake.segments.unshift({ x: snake.head.x, y: snake.head.y });
+    }
+    const maxLen = Math.max(1, Math.ceil(snake.maxSegments));
+    if (snake.segments.length > maxLen) snake.segments.length = maxLen;
+  }
+
+  function playerDesiredHeadingDelta(dtSec) {
+    if (leftHeld) mySnake.heading -= KEY_TURN_RATE * dtSec;
+    if (rightHeld) mySnake.heading += KEY_TURN_RATE * dtSec;
+    if (!leftHeld && !rightHeld && mouseActive) {
+      mySnake.heading = turnToward(mySnake.heading, mouseTargetHeading, MAX_TURN_RATE * dtSec);
+    }
+  }
+
+  // ---------------- Online mode ----------------
+
+  function updateOnlineTick(dt, dtSec) {
+    playerDesiredHeadingDelta(dtSec);
+    advanceSnake(mySnake, dtSec);
+    camera.x = mySnake.head.x;
+    camera.y = mySnake.head.y;
+
+    const hit = checkSnakeCollisions(mySnake, opponents, null);
+    if (hit) {
+      if (hit.type === "wall") die(null, "You hit the wall!");
+      else if (hit.type === "head") die(null, `Collided head-on with ${hit.other.name}!`);
+      else die(hit.otherId, `Eaten by ${hit.other.name}!`);
+    }
+    if (!mySnake.alive) return;
 
     for (const [id, orb] of orbs) {
-      if (Math.hypot(head.x - orb.x, head.y - orb.y) < EAT_RADIUS) {
+      if (Math.hypot(mySnake.head.x - orb.x, mySnake.head.y - orb.y) < EAT_RADIUS) {
         mySnake.score += 1;
         mySnake.maxSegments += GROWTH_PER_FOOD_SEGMENTS;
         orbs.delete(id);
@@ -252,36 +301,6 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
         break;
       }
     }
-  }
-
-  function updateMovement(dtSec) {
-    if (leftHeld) mySnake.heading -= KEY_TURN_RATE * dtSec;
-    if (rightHeld) mySnake.heading += KEY_TURN_RATE * dtSec;
-    if (!leftHeld && !rightHeld && mouseActive) {
-      mySnake.heading = turnToward(mySnake.heading, mouseTargetHeading, MAX_TURN_RATE * dtSec);
-    }
-
-    mySnake.head.x += Math.cos(mySnake.heading) * SPEED * dtSec;
-    mySnake.head.y += Math.sin(mySnake.heading) * SPEED * dtSec;
-
-    const front = mySnake.segments[0];
-    if (!front || Math.hypot(mySnake.head.x - front.x, mySnake.head.y - front.y) >= SEGMENT_SPACING) {
-      mySnake.segments.unshift({ x: mySnake.head.x, y: mySnake.head.y });
-    }
-    const maxLen = Math.max(1, Math.ceil(mySnake.maxSegments));
-    if (mySnake.segments.length > maxLen) mySnake.segments.length = maxLen;
-
-    camera.x = mySnake.head.x;
-    camera.y = mySnake.head.y;
-  }
-
-  function update(dt) {
-    if (!isPlaying || !mySnake || !mySnake.alive) return;
-    const dtSec = Math.min(dt, 50) / 1000;
-
-    updateMovement(dtSec);
-    checkCollisions();
-    if (!mySnake.alive) return;
 
     stepBroadcastTimer += dt;
     if (stepBroadcastTimer >= STEP_BROADCAST_INTERVAL) {
@@ -308,7 +327,150 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     }
   }
 
-  function drawSnakeBody(segments, color, highlight) {
+  // ---------------- Offline mode (bots) ----------------
+
+  function spawnBot() {
+    const id = `bot-${botCounter++}-${Math.random().toString(36).slice(2, 6)}`;
+    const name = botNameIndex < BOT_NAMES.length ? BOT_NAMES[botNameIndex] : `${BOT_NAMES[botNameIndex % BOT_NAMES.length]} ${Math.floor(botNameIndex / BOT_NAMES.length) + 1}`;
+    botNameIndex++;
+    const pos = startPositionForId(id);
+    bots.set(id, {
+      ownerId: id,
+      name,
+      head: { x: pos.x, y: pos.y },
+      heading: pos.angle + Math.PI,
+      segments: [{ x: pos.x, y: pos.y }],
+      score: 0,
+      maxSegments: BASE_LENGTH_SEGMENTS + Math.random() * 20,
+      alive: true,
+      wanderTimer: 0,
+      wanderOffset: 0,
+      avoidSign: Math.random() < 0.5 ? 1 : -1,
+    });
+  }
+
+  function computeBotDesiredHeading(bot, dtSec) {
+    let target = null;
+    let bestDist = BOT_SENSE_RADIUS;
+    for (const orb of orbs.values()) {
+      const d = Math.hypot(orb.x - bot.head.x, orb.y - bot.head.y);
+      if (d < bestDist) {
+        bestDist = d;
+        target = orb;
+      }
+    }
+
+    let desired;
+    if (target) {
+      desired = Math.atan2(target.y - bot.head.y, target.x - bot.head.x);
+    } else {
+      bot.wanderTimer -= dtSec;
+      if (bot.wanderTimer <= 0) {
+        bot.wanderTimer = 1.5 + Math.random() * 2;
+        bot.wanderOffset = (Math.random() - 0.5) * 1.4;
+      }
+      desired = bot.heading + (bot.wanderOffset || 0);
+    }
+
+    if (Math.hypot(bot.head.x, bot.head.y) > ARENA_RADIUS * 0.82) {
+      desired = Math.atan2(-bot.head.y, -bot.head.x);
+    }
+
+    const lookX = bot.head.x + Math.cos(bot.heading) * 70;
+    const lookY = bot.head.y + Math.sin(bot.heading) * 70;
+    const everyone = allSnakesMap();
+    for (const [id, other] of everyone) {
+      if (id === bot.ownerId || other.alive === false || !other.segments) continue;
+      for (const seg of other.segments) {
+        if (Math.hypot(lookX - seg.x, lookY - seg.y) < 45) {
+          desired += bot.avoidSign;
+          break;
+        }
+      }
+    }
+
+    return desired;
+  }
+
+  function allSnakesMap() {
+    const map = new Map(bots);
+    if (mySnake) map.set(myId, mySnake);
+    return map;
+  }
+
+  function tryEatFoodOffline(snake) {
+    for (const [id, orb] of orbs) {
+      if (Math.hypot(snake.head.x - orb.x, snake.head.y - orb.y) < EAT_RADIUS) {
+        snake.score += 1;
+        snake.maxSegments += GROWTH_PER_FOOD_SEGMENTS;
+        orbs.delete(id);
+        spawnOrb();
+        break;
+      }
+    }
+  }
+
+  function updateOfflineTick(dtSec) {
+    playerDesiredHeadingDelta(dtSec);
+    advanceSnake(mySnake, dtSec);
+    camera.x = mySnake.head.x;
+    camera.y = mySnake.head.y;
+
+    for (const bot of bots.values()) {
+      if (!bot.alive) continue;
+      const desired = computeBotDesiredHeading(bot, dtSec);
+      bot.heading = turnToward(bot.heading, desired, MAX_TURN_RATE * dtSec);
+      advanceSnake(bot, dtSec);
+    }
+
+    tryEatFoodOffline(mySnake);
+    for (const bot of bots.values()) {
+      if (bot.alive) tryEatFoodOffline(bot);
+    }
+
+    const playerHit = checkSnakeCollisions(mySnake, bots, null);
+    if (playerHit) {
+      if (playerHit.type === "wall") die(null, "You hit the wall!");
+      else if (playerHit.type === "head") die(null, `Collided head-on with ${playerHit.other.name}!`);
+      else die(playerHit.otherId, `Eaten by ${playerHit.other.name}!`, playerHit.other);
+    }
+
+    const everyone = allSnakesMap();
+    for (const [id, bot] of bots) {
+      if (!bot.alive) continue;
+      const hit = checkSnakeCollisions(bot, everyone, id);
+      if (hit) {
+        bot.alive = false;
+        if (hit.type === "body") {
+          const killer = hit.otherId === myId ? mySnake : bots.get(hit.otherId);
+          if (killer && (hit.otherId !== myId || mySnake.alive)) absorbVictim(killer, bot);
+        }
+      }
+    }
+
+    for (const [id, bot] of bots) {
+      if (!bot.alive) bots.delete(id);
+    }
+    botRespawnTimer -= dtSec;
+    if (botRespawnTimer <= 0 && bots.size < TARGET_BOT_COUNT) {
+      spawnBot();
+      botRespawnTimer = BOT_RESPAWN_DELAY;
+    }
+  }
+
+  function update(dt) {
+    if (!isPlaying || !mySnake || !mySnake.alive) return;
+    const dtSec = Math.min(dt, 50) / 1000;
+    if (mode === "offline") {
+      updateOfflineTick(dtSec);
+    } else {
+      updateOnlineTick(dt, dtSec);
+    }
+  }
+
+  // ---------------- Rendering ----------------
+
+  function drawSnakeBody(segments, color, highlight, heading) {
     if (!segments || segments.length === 0) return;
     ctx.fillStyle = color;
     for (let i = segments.length - 1; i >= 0; i--) {
@@ -317,13 +479,71 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
       ctx.arc(seg.x, seg.y, 10, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    const head = segments[0];
+    if (typeof heading === "number") {
+      const fx = Math.cos(heading);
+      const fy = Math.sin(heading);
+      const px = -fy;
+      const py = fx;
+      ctx.fillStyle = "#0f172a";
+      [-1, 1].forEach((s) => {
+        const ex = head.x + fx * 4 + px * 6 * s;
+        const ey = head.y + fy * 4 + py * 6 * s;
+        ctx.beginPath();
+        ctx.arc(ex, ey, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      const mouthX = head.x + fx * 11;
+      const mouthY = head.y + fy * 11;
+      ctx.strokeStyle = "#0f172a";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(mouthX - px * 4, mouthY - py * 4);
+      ctx.lineTo(mouthX + px * 4, mouthY + py * 4);
+      ctx.stroke();
+    }
+
     if (highlight) {
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(segments[0].x, segments[0].y, 12, 0, Math.PI * 2);
+      ctx.arc(head.x, head.y, 12, 0, Math.PI * 2);
       ctx.stroke();
     }
+  }
+
+  function drawLeaderboard() {
+    const entries = [];
+    if (mySnake) entries.push({ name: "You", len: mySnake.segments.length, isMe: true });
+    const others = mode === "offline" ? bots : opponents;
+    for (const s of others.values()) {
+      if (s.alive === false) continue;
+      entries.push({ name: s.name || "Player", len: s.segments ? s.segments.length : 0, isMe: false });
+    }
+    entries.sort((a, b) => b.len - a.len);
+    const top = entries.slice(0, 8);
+
+    const panelW = 176;
+    const panelX = canvas.width - panelW - 14;
+    const panelY = 16;
+    const rowH = 20;
+    ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
+    ctx.fillRect(panelX, panelY, panelW, 30 + top.length * rowH);
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "bold 12px system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("LEADERBOARD", panelX + 10, panelY + 18);
+    top.forEach((e, i) => {
+      const y = panelY + 34 + i * rowH;
+      ctx.fillStyle = e.isMe ? "#fbbf24" : "#e2e8f0";
+      ctx.font = e.isMe ? "bold 13px system-ui, sans-serif" : "13px system-ui, sans-serif";
+      ctx.textAlign = "left";
+      const label = `${i + 1}. ${e.name}`;
+      ctx.fillText(label.length > 16 ? `${label.slice(0, 15)}…` : label, panelX + 10, y);
+      ctx.textAlign = "right";
+      ctx.fillText(String(e.len), panelX + panelW - 10, y);
+    });
   }
 
   function draw() {
@@ -369,15 +589,19 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
       ctx.fill();
     }
 
-    for (const opp of opponents.values()) {
-      drawSnakeBody(opp.segments, colorForId(opp.ownerId), false);
+    const others = mode === "offline" ? bots : opponents;
+    for (const s of others.values()) {
+      if (s.alive === false) continue;
+      drawSnakeBody(s.segments, colorForId(s.ownerId), false, s.heading);
     }
 
     if (mySnake.alive) {
-      drawSnakeBody(mySnake.segments, colorForId(myId), true);
+      drawSnakeBody(mySnake.segments, colorForId(myId), true, mySnake.heading);
     }
 
     ctx.restore();
+
+    drawLeaderboard();
 
     if (hostLeftAt && performance.now() - hostLeftAt < HOST_LEFT_NOTICE_MS) {
       ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
@@ -394,9 +618,10 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   }
 
   function getHud() {
+    const otherCount = mode === "offline" ? bots.size : opponents.size;
     return {
       left: `⭐ ${mySnake?.score ?? 0} (Len ${mySnake?.segments.length ?? 0})`,
-      right: `👥 ${opponents.size + 1}`,
+      right: `👥 ${otherCount + 1}`,
     };
   }
 
@@ -418,6 +643,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
       alive: true,
     };
     opponents = new Map();
+    bots = new Map();
     camera.x = pos.x;
     camera.y = pos.y;
     leftHeld = false;
@@ -425,42 +651,67 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     mouseActive = false;
     stepBroadcastTimer = 0;
     foodSyncTimer = 0;
+    botRespawnTimer = 0;
     hostLeftAt = 0;
     dead = false;
     deathReason = "";
     isPlaying = true;
 
-    if (isHost) {
-      orbs = new Map();
-      for (let i = 0; i < TARGET_FOOD_COUNT; i++) spawnOrb();
+    orbs = new Map();
+    for (let i = 0; i < TARGET_FOOD_COUNT; i++) spawnOrb();
+
+    if (mode === "offline") {
+      for (let i = 0; i < TARGET_BOT_COUNT; i++) spawnBot();
+    } else if (isHost) {
       broadcastFoodSync();
     }
   }
 
   function save() {
-    if (mySnake && mySnake.alive && channel) {
-      channel.send({
-        type: "broadcast",
-        event: "snake-died",
-        payload: { ownerId: myId, killerId: null, segments: mySnake.segments },
-      });
+    if (mode === "online") {
+      if (mySnake && mySnake.alive && channel) {
+        channel.send({
+          type: "broadcast",
+          event: "snake-died",
+          payload: {
+            ownerId: myId,
+            killerId: null,
+            segments: mySnake.segments,
+            maxSegments: mySnake.maxSegments,
+            score: mySnake.score,
+          },
+        });
+      }
+      closeRoom(channel);
+      channel = null;
     }
-    closeRoom(channel);
-    channel = null;
     isPlaying = false;
   }
+
+  // ---------------- Lobby ----------------
 
   function renderChoiceScreen(overlayEl, onReady, onCancel) {
     overlayEl.innerHTML = `
       <h1>Snake Arena</h1>
-      <p>Play live with any number of friends on other devices. Everyone needs the same code.</p>
+      <p>Play live with friends on other devices, or practice offline against bots.</p>
       <button data-lobby-action="create">Create Arena</button>
       <button class="secondary" data-lobby-action="join">Join Arena</button>
+      <button class="secondary" data-lobby-action="offline">Play Offline (Bots)</button>
       <button class="auth-toggle" type="button" data-lobby-action="cancel">← Back</button>
     `;
     overlayEl.querySelector('[data-lobby-action="create"]').addEventListener("click", () => createArena(overlayEl, onReady, onCancel));
     overlayEl.querySelector('[data-lobby-action="join"]').addEventListener("click", () => renderJoinScreen(overlayEl, onReady, onCancel));
+    overlayEl.querySelector('[data-lobby-action="offline"]').addEventListener("click", () => startOffline(onReady));
     overlayEl.querySelector('[data-lobby-action="cancel"]').addEventListener("click", onCancel);
+  }
+
+  function startOffline(onReady) {
+    mode = "offline";
+    myId = crypto.randomUUID();
+    myName = getPlayerName ? getPlayerName() : "Guest";
+    isHost = false;
+    channel = null;
+    onReady();
   }
 
   function renderJoinScreen(overlayEl, onReady, onCancel) {
@@ -487,6 +738,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   }
 
   async function createArena(overlayEl, onReady, onCancel) {
+    mode = "online";
     const code = generateRoomCode();
     myId = crypto.randomUUID();
     myName = getPlayerName ? getPlayerName() : "Guest";
@@ -503,6 +755,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   }
 
   async function joinArena(overlayEl, code, onReady, onCancel) {
+    mode = "online";
     myId = crypto.randomUUID();
     myName = getPlayerName ? getPlayerName() : "Guest";
     isHost = false;
@@ -578,6 +831,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     hostPresenceKey = null;
     pendingOnReady = null;
     opponents = new Map();
+    bots = new Map();
     presenceNames = new Map();
     orbs = new Map();
     renderChoiceScreen(overlayEl, onReady, onCancel);
@@ -587,7 +841,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     id: "snake-arena",
     title: "Snake Arena",
     thumbnail: null,
-    description: "Live multiplayer Snake — play with any number of friends on other devices. Eat orbs, eat opponents, avoid the wall.",
+    description: "Multiplayer Snake — play live with friends online, or practice offline against bots. Eat orbs, eat opponents, avoid the wall.",
     needsLobby: true,
     renderLobby,
     reset,
