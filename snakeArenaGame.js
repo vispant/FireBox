@@ -6,7 +6,9 @@ const MAX_TURN_RATE = 4.0; // rad/s, mouse steering
 const KEY_TURN_RATE = 4.0; // rad/s, keyboard steering
 const SEGMENT_SPACING = 6;
 const BASE_LENGTH_SEGMENTS = 20;
-const GROWTH_PER_FOOD_SEGMENTS = 3;
+const MAX_BODY_SEGMENTS = 350; // visual/collision body length cap — independent of the height stat, which is uncapped
+const BODY_GROWTH_RATE = 0.08; // how many extra rendered segments per point of height, before the cap
+const GROWTH_PER_FOOD_HEIGHT = 15;
 const COLLISION_RADIUS = 14;
 const EAT_RADIUS = 16;
 const STEP_BROADCAST_INTERVAL = 80; // ms
@@ -15,10 +17,23 @@ const TARGET_FOOD_COUNT = 180;
 const JOIN_TIMEOUT_MS = 45000;
 const HOST_LEFT_NOTICE_MS = 5000;
 
-const TARGET_BOT_COUNT = 8;
+const TARGET_BOT_COUNT = 19; // + the player = 20 snakes in the arena
 const BOT_RESPAWN_DELAY = 4; // seconds
 const BOT_SENSE_RADIUS = 400;
-const BOT_NAMES = ["Wiggly", "Zippy", "Muncher", "Blitz", "Scales", "Turbo", "Slinky", "Rex", "Noodle", "Fang"];
+const BOT_NAMES = [
+  "Wiggly", "Zippy", "Muncher", "Blitz", "Scales", "Turbo", "Slinky", "Rex", "Noodle", "Fang",
+  "Coily", "Viper", "Python", "Dash", "Nibbles", "Sly", "Twister", "Boa", "Whip",
+];
+
+function bodyLengthFor(height) {
+  return Math.min(MAX_BODY_SEGMENTS, BASE_LENGTH_SEGMENTS + height * BODY_GROWTH_RATE);
+}
+
+function formatHeight(n) {
+  const v = Math.floor(n || 0);
+  if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
+  return String(v);
+}
 
 const SNAKE_COLORS = ["#4ade80", "#60a5fa", "#f472b6", "#fbbf24", "#c084fc", "#f87171", "#2dd4bf", "#fb923c"];
 
@@ -143,8 +158,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   }
 
   function absorbVictim(killer, victim) {
-    killer.score += victim.score || 0;
-    killer.maxSegments += victim.maxSegments || 0;
+    killer.height += victim.height || 0;
   }
 
   function wireChannelHandlers() {
@@ -155,7 +169,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
         head: payload.head,
         heading: payload.heading,
         segments: payload.segments,
-        score: payload.score,
+        height: payload.height,
         name: presenceNames.get(payload.ownerId) || "Player",
       });
     });
@@ -173,7 +187,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     channel.on("broadcast", { event: "snake-died" }, ({ payload }) => {
       opponents.delete(payload.ownerId);
       if (payload.killerId === myId && mySnake && mySnake.alive) {
-        absorbVictim(mySnake, { score: payload.score, maxSegments: payload.maxSegments });
+        absorbVictim(mySnake, { height: payload.height });
       }
       if (isHost && Array.isArray(payload.segments)) {
         payload.segments
@@ -222,8 +236,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
           ownerId: myId,
           killerId,
           segments: mySnake.segments,
-          maxSegments: mySnake.maxSegments,
-          score: mySnake.score,
+          height: mySnake.height,
         },
       });
     } else if (mode === "offline" && killerSnakeForAbsorb) {
@@ -260,7 +273,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     if (!front || Math.hypot(snake.head.x - front.x, snake.head.y - front.y) >= SEGMENT_SPACING) {
       snake.segments.unshift({ x: snake.head.x, y: snake.head.y });
     }
-    const maxLen = Math.max(1, Math.ceil(snake.maxSegments));
+    const maxLen = Math.max(1, Math.ceil(bodyLengthFor(snake.height)));
     if (snake.segments.length > maxLen) snake.segments.length = maxLen;
   }
 
@@ -290,8 +303,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
 
     for (const [id, orb] of orbs) {
       if (Math.hypot(mySnake.head.x - orb.x, mySnake.head.y - orb.y) < EAT_RADIUS) {
-        mySnake.score += 1;
-        mySnake.maxSegments += GROWTH_PER_FOOD_SEGMENTS;
+        mySnake.height += GROWTH_PER_FOOD_HEIGHT;
         orbs.delete(id);
         if (isHost) {
           spawnOrb();
@@ -313,7 +325,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
           head: mySnake.head,
           heading: mySnake.heading,
           segments: mySnake.segments,
-          score: mySnake.score,
+          height: mySnake.height,
         },
       });
     }
@@ -340,25 +352,36 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
       head: { x: pos.x, y: pos.y },
       heading: pos.angle + Math.PI,
       segments: [{ x: pos.x, y: pos.y }],
-      score: 0,
-      maxSegments: BASE_LENGTH_SEGMENTS + Math.random() * 20,
+      height: Math.random() * 100,
       alive: true,
       wanderTimer: 0,
-      wanderOffset: 0,
-      avoidSign: Math.random() < 0.5 ? 1 : -1,
+      wanderHeading: pos.angle + Math.PI,
+      targetOrbId: null,
+      retargetTimer: 0,
     });
   }
 
   function computeBotDesiredHeading(bot, dtSec) {
-    let target = null;
-    let bestDist = BOT_SENSE_RADIUS;
-    for (const orb of orbs.values()) {
-      const d = Math.hypot(orb.x - bot.head.x, orb.y - bot.head.y);
-      if (d < bestDist) {
-        bestDist = d;
-        target = orb;
+    // Commit to a target orb for a short while instead of re-picking "nearest" every
+    // frame — otherwise a bot sitting between two near-equidistant orbs flips its target
+    // back and forth as it moves, and never actually closes in on either (visible as
+    // small stable orbits / circling instead of real travel).
+    bot.retargetTimer = (bot.retargetTimer || 0) - dtSec;
+    const lockedTarget = bot.targetOrbId ? orbs.get(bot.targetOrbId) : null;
+    if (!lockedTarget || bot.retargetTimer <= 0) {
+      bot.retargetTimer = 0.6 + Math.random() * 0.4;
+      let bestId = null;
+      let bestDist = BOT_SENSE_RADIUS;
+      for (const [id, orb] of orbs) {
+        const d = Math.hypot(orb.x - bot.head.x, orb.y - bot.head.y);
+        if (d < bestDist) {
+          bestDist = d;
+          bestId = id;
+        }
       }
+      bot.targetOrbId = bestId;
     }
+    const target = bot.targetOrbId ? orbs.get(bot.targetOrbId) : null;
 
     let desired;
     if (target) {
@@ -366,27 +389,41 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     } else {
       bot.wanderTimer -= dtSec;
       if (bot.wanderTimer <= 0) {
-        bot.wanderTimer = 1.5 + Math.random() * 2;
-        bot.wanderOffset = (Math.random() - 0.5) * 1.4;
+        bot.wanderTimer = 2 + Math.random() * 2.5;
+        // Pick a fresh ABSOLUTE heading, not an offset from the current one — an offset
+        // recomputed every frame relative to a heading that's already chasing it creates
+        // a feedback loop where the bot just spirals forever instead of going anywhere.
+        bot.wanderHeading = Math.random() * Math.PI * 2;
       }
-      desired = bot.heading + (bot.wanderOffset || 0);
+      desired = bot.wanderHeading;
     }
 
     if (Math.hypot(bot.head.x, bot.head.y) > ARENA_RADIUS * 0.82) {
       desired = Math.atan2(-bot.head.y, -bot.head.x);
     }
 
+    // Obstacle avoidance: steer directly away from the nearest threatening segment,
+    // rather than nudging by an arbitrary fixed rotation. A fixed nudge doesn't know
+    // which way is actually safe, so if a threat lingers in range across frames it can
+    // sustain near-max-rate turning indefinitely — a real escape vector resolves once
+    // the bot has put distance between itself and the threat, instead of orbiting it.
     const lookX = bot.head.x + Math.cos(bot.heading) * 70;
     const lookY = bot.head.y + Math.sin(bot.heading) * 70;
     const everyone = allSnakesMap();
+    let nearestThreatDist = 45;
+    let nearestThreatSeg = null;
     for (const [id, other] of everyone) {
       if (id === bot.ownerId || other.alive === false || !other.segments) continue;
       for (const seg of other.segments) {
-        if (Math.hypot(lookX - seg.x, lookY - seg.y) < 45) {
-          desired += bot.avoidSign;
-          break;
+        const d = Math.hypot(lookX - seg.x, lookY - seg.y);
+        if (d < nearestThreatDist) {
+          nearestThreatDist = d;
+          nearestThreatSeg = seg;
         }
       }
+    }
+    if (nearestThreatSeg) {
+      desired = Math.atan2(bot.head.y - nearestThreatSeg.y, bot.head.x - nearestThreatSeg.x);
     }
 
     return desired;
@@ -401,8 +438,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   function tryEatFoodOffline(snake) {
     for (const [id, orb] of orbs) {
       if (Math.hypot(snake.head.x - orb.x, snake.head.y - orb.y) < EAT_RADIUS) {
-        snake.score += 1;
-        snake.maxSegments += GROWTH_PER_FOOD_SEGMENTS;
+        snake.height += GROWTH_PER_FOOD_HEIGHT;
         orbs.delete(id);
         spawnOrb();
         break;
@@ -453,7 +489,9 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     }
     botRespawnTimer -= dtSec;
     if (botRespawnTimer <= 0 && bots.size < TARGET_BOT_COUNT) {
-      spawnBot();
+      const deficit = TARGET_BOT_COUNT - bots.size;
+      const spawnCount = deficit > 6 ? 3 : 1;
+      for (let i = 0; i < spawnCount; i++) spawnBot();
       botRespawnTimer = BOT_RESPAWN_DELAY;
     }
   }
@@ -515,16 +553,16 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
 
   function drawLeaderboard() {
     const entries = [];
-    if (mySnake) entries.push({ name: "You", len: mySnake.segments.length, isMe: true });
+    if (mySnake) entries.push({ name: "You", height: mySnake.height, isMe: true });
     const others = mode === "offline" ? bots : opponents;
     for (const s of others.values()) {
       if (s.alive === false) continue;
-      entries.push({ name: s.name || "Player", len: s.segments ? s.segments.length : 0, isMe: false });
+      entries.push({ name: s.name || "Player", height: s.height || 0, isMe: false });
     }
-    entries.sort((a, b) => b.len - a.len);
+    entries.sort((a, b) => b.height - a.height);
     const top = entries.slice(0, 8);
 
-    const panelW = 176;
+    const panelW = 190;
     const panelX = canvas.width - panelW - 14;
     const panelY = 16;
     const rowH = 20;
@@ -542,7 +580,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
       const label = `${i + 1}. ${e.name}`;
       ctx.fillText(label.length > 16 ? `${label.slice(0, 15)}…` : label, panelX + 10, y);
       ctx.textAlign = "right";
-      ctx.fillText(String(e.len), panelX + panelW - 10, y);
+      ctx.fillText(formatHeight(e.height), panelX + panelW - 10, y);
     });
   }
 
@@ -620,7 +658,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   function getHud() {
     const otherCount = mode === "offline" ? bots.size : opponents.size;
     return {
-      left: `⭐ ${mySnake?.score ?? 0} (Len ${mySnake?.segments.length ?? 0})`,
+      left: `📏 Height: ${formatHeight(mySnake?.height ?? 0)}`,
       right: `👥 ${otherCount + 1}`,
     };
   }
@@ -628,7 +666,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   function getOverResult() {
     return {
       title: "You Died!",
-      message: `${deathReason} Final score: ${mySnake?.score ?? 0}`,
+      message: `${deathReason} Final height: ${formatHeight(mySnake?.height ?? 0)}`,
     };
   }
 
@@ -638,8 +676,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
       head: { x: pos.x, y: pos.y },
       heading: pos.angle + Math.PI,
       segments: [{ x: pos.x, y: pos.y }],
-      score: 0,
-      maxSegments: BASE_LENGTH_SEGMENTS,
+      height: 0,
       alive: true,
     };
     opponents = new Map();
@@ -677,8 +714,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
             ownerId: myId,
             killerId: null,
             segments: mySnake.segments,
-            maxSegments: mySnake.maxSegments,
-            score: mySnake.score,
+            height: mySnake.height,
           },
         });
       }
