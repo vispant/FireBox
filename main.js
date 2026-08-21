@@ -11,6 +11,8 @@ import { createFlappyGame } from "./flappyGame.js?v=2";
 import { createSnakeGame } from "./snakeGame.js?v=2";
 import { createWhackGame } from "./whackGame.js?v=1";
 import { createSnakeArenaGame } from "./snakeArenaGame.js?v=1";
+import { createBrickGame } from "./brickGame.js?v=1";
+import { createRunnerGame } from "./runnerGame.js?v=1";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -99,6 +101,8 @@ const normalGames = [
   createSnakeGame({ canvas, ctx }),
   createWhackGame({ canvas, ctx }),
   createSnakeArenaGame({ canvas, ctx, getPlayerName }),
+  createBrickGame({ canvas, ctx }),
+  createRunnerGame({ canvas, ctx }),
 ];
 
 function setScreen(next) {
