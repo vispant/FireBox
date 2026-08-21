@@ -10,6 +10,7 @@ import { TURNSTILE_SITE_KEY } from "./config.js?v=1";
 import { createFlappyGame } from "./flappyGame.js?v=2";
 import { createSnakeGame } from "./snakeGame.js?v=2";
 import { createWhackGame } from "./whackGame.js?v=1";
+import { createSnakeArenaGame } from "./snakeArenaGame.js?v=1";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -61,7 +62,7 @@ function wireBgSelect() {
   });
 }
 
-let screen = "loading"; // loading | auth | hub | menu | playing | paused | gameover
+let screen = "loading"; // loading | auth | hub | menu | normalMenu | lobby | playing | paused | gameover
 let activeGame = null;
 let currentUser = null;
 let turnstileWidgetId = null;
@@ -89,10 +90,15 @@ const games = [
   createCatchGame({ canvas, ctx, video }),
   createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, fxCtx }),
 ];
+function getPlayerName() {
+  return currentUser?.user_metadata?.name || currentUser?.email || "Guest";
+}
+
 const normalGames = [
   createFlappyGame({ canvas, ctx }),
   createSnakeGame({ canvas, ctx }),
   createWhackGame({ canvas, ctx }),
+  createSnakeArenaGame({ canvas, ctx, getPlayerName }),
 ];
 
 function setScreen(next) {
@@ -499,14 +505,30 @@ function renderGameOver(result) {
   `;
 }
 
-function startGame(gameId) {
-  activeGame = games.find((g) => g.id === gameId) || normalGames.find((g) => g.id === gameId);
-  if (activeGame.primeAudio) activeGame.primeAudio();
-  activeGame.reset();
+function enterPlaying() {
   setScreen("playing");
   overlay.classList.add("hidden");
   threeCanvas.classList.toggle("hidden", !activeGame.draw3D);
   fxCanvas.classList.toggle("hidden", !activeGame.draw3D);
+}
+
+function startGame(gameId) {
+  activeGame = games.find((g) => g.id === gameId) || normalGames.find((g) => g.id === gameId);
+  if (activeGame.primeAudio) activeGame.primeAudio();
+  if (activeGame.needsLobby) {
+    setScreen("lobby");
+    overlay.classList.remove("hidden");
+    activeGame.renderLobby(overlay, {
+      onReady: () => {
+        activeGame.reset();
+        enterPlaying();
+      },
+      onCancel: backToGameList,
+    });
+    return;
+  }
+  activeGame.reset();
+  enterPlaying();
 }
 
 function showMenu() {
