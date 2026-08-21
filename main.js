@@ -8,6 +8,8 @@ import { createPersonSegmenter } from "./segmentation.js?v=3";
 import { signUp, signIn, signOut, getCurrentUser, fetchCountry } from "./auth.js?v=1";
 import { TURNSTILE_SITE_KEY } from "./config.js?v=1";
 import { createFlappyGame } from "./flappyGame.js?v=1";
+import { createSnakeGame } from "./snakeGame.js?v=1";
+import { createWhackGame } from "./whackGame.js?v=1";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -87,7 +89,11 @@ const games = [
   createCatchGame({ canvas, ctx, video }),
   createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, fxCtx }),
 ];
-const normalGames = [createFlappyGame({ canvas, ctx })];
+const normalGames = [
+  createFlappyGame({ canvas, ctx }),
+  createSnakeGame({ canvas, ctx }),
+  createWhackGame({ canvas, ctx }),
+];
 
 function setScreen(next) {
   screen = next;
