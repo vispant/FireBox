@@ -58,10 +58,12 @@ function wireBgSelect() {
   });
 }
 
-let screen = "loading"; // loading | auth | menu | playing | paused | gameover
+let screen = "loading"; // loading | auth | hub | menu | playing | paused | gameover
 let activeGame = null;
 let currentUser = null;
 let turnstileWidgetId = null;
+let modelsReady = false;
+let predictLoopStarted = false;
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
@@ -288,7 +290,7 @@ function renderAuth(mode = "signup") {
         const result = await signIn({ email, password, captchaToken });
         currentUser = result.user;
       }
-      showMenu();
+      showHub();
     } catch (err) {
       statusEl.style.color = "#ef4444";
       statusEl.textContent = err.message || "Something went wrong.";
@@ -306,10 +308,9 @@ function showAuth() {
   renderAuth("signup");
 }
 
-function renderMenu() {
+function renderHub() {
   overlay.innerHTML = `
     <h1>FireBox</h1>
-    <p>Pick a game. Stand back so your whole body is in view — Fist Fighter tracks your feet too.</p>
     ${
       currentUser
         ? `<div class="selectRow"><span>Signed in as ${escapeHtml(
@@ -317,6 +318,73 @@ function renderMenu() {
           )}</span><button class="auth-toggle" type="button" data-action="sign-out">Sign Out</button></div>`
         : ""
     }
+    <p>Choose a category to get started.</p>
+    <div class="game-grid">
+      <button class="game-card" data-action="open-camera-games">
+        <div class="card-body">
+          <strong>📷 Camera Games</strong>
+          <span>Motion-tracking games that use your webcam. We'll only ask for camera access once you open this.</span>
+        </div>
+      </button>
+    </div>
+  `;
+}
+
+function showHub() {
+  setScreen("hub");
+  overlay.classList.remove("hidden");
+  threeCanvas.classList.add("hidden");
+  fxCanvas.classList.add("hidden");
+  renderHub();
+}
+
+async function startCameraGames() {
+  setScreen("loading");
+  overlay.innerHTML = `<h1>Camera Games</h1><p id="status">Requesting camera access...</p>`;
+  try {
+    if (!currentStream) {
+      await setupCamera();
+      const preferred = await refreshCameraList(activeDeviceId);
+      if (preferred) await setupCamera(preferred);
+    }
+
+    if (!modelsReady) {
+      document.getElementById("status").textContent = "Loading pose model...";
+      await setupPoseLandmarker();
+
+      document.getElementById("status").textContent = "Loading background removal...";
+      try {
+        await personSegmenter.init();
+      } catch (err) {
+        console.warn("Person segmentation unavailable, backgrounds will use the plain camera view instead.", err);
+      }
+      modelsReady = true;
+    }
+
+    if (!predictLoopStarted) {
+      predictLoopStarted = true;
+      requestAnimationFrame(predict);
+    }
+    showMenu();
+  } catch (err) {
+    console.error(err);
+    overlay.innerHTML = `<h1>Camera Games</h1><p>Could not start camera or model: ${err.message} (check camera permissions, that no other app is using the camera, and that you're on http://localhost or https).</p><button class="secondary" data-action="back-to-hub">Back</button>`;
+  }
+}
+
+function exitCameraGames() {
+  if (currentStream) {
+    currentStream.getTracks().forEach((t) => t.stop());
+    currentStream = null;
+  }
+  showHub();
+}
+
+function renderMenu() {
+  overlay.innerHTML = `
+    <h1>Camera Games</h1>
+    <button class="auth-toggle" type="button" data-action="back-to-hub">← Back</button>
+    <p>Pick a game. Stand back so your whole body is in view — Fist Fighter tracks your feet too.</p>
     <div class="selectRow">
       <label for="cameraSelect">Camera:</label>
       <select id="cameraSelect"></select>
@@ -441,12 +509,16 @@ overlay.addEventListener("click", (e) => {
   if (action === "auth-mode") {
     renderAuth(btn.dataset.mode);
   } else if (action === "continue-guest") {
-    showMenu();
+    showHub();
   } else if (action === "sign-out") {
     signOut().then(() => {
       currentUser = null;
-      showMenu();
+      showAuth();
     });
+  } else if (action === "open-camera-games") {
+    startCameraGames();
+  } else if (action === "back-to-hub") {
+    exitCameraGames();
   } else if (action === "select-game") {
     startGame(btn.dataset.gameId);
   } else if (action === "resume") {
@@ -494,32 +566,16 @@ window.addEventListener("keydown", (e) => {
 
 async function init() {
   try {
-    overlay.innerHTML = `<h1>FireBox</h1><p id="status">Requesting camera access...</p>`;
-    await setupCamera();
-    const preferred = await refreshCameraList();
-    if (preferred) await setupCamera(preferred);
-
-    document.getElementById("status").textContent = "Loading pose model...";
-    await setupPoseLandmarker();
-
-    document.getElementById("status").textContent = "Loading background removal...";
-    try {
-      await personSegmenter.init();
-    } catch (err) {
-      console.warn("Person segmentation unavailable, backgrounds will use the plain camera view instead.", err);
-    }
-
-    document.getElementById("status").textContent = "Checking sign-in...";
+    overlay.innerHTML = `<h1>FireBox</h1><p id="status">Checking sign-in...</p>`;
     currentUser = await getCurrentUser();
     if (currentUser) {
-      showMenu();
+      showHub();
     } else {
       showAuth();
     }
-    requestAnimationFrame(predict);
   } catch (err) {
     console.error(err);
-    overlay.innerHTML = `<h1>FireBox</h1><p>Could not start camera or model: ${err.message} (check camera permissions, that no other app is using the camera, and that you're on http://localhost or https).</p>`;
+    overlay.innerHTML = `<h1>FireBox</h1><p>Could not start: ${err.message}</p>`;
   }
 }
 

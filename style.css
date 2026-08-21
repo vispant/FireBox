@@ -175,11 +175,12 @@ canvas {
   border-color: #60a5fa;
 }
 
-.auth-toggle {
+#overlay .auth-toggle {
   background: none;
   border: none;
   color: #60a5fa;
   font-size: 0.9rem;
+  font-weight: 400;
   cursor: pointer;
   text-decoration: underline;
   padding: 4px;
