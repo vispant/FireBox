@@ -7,6 +7,7 @@ import { createFighterGame } from "./fighterGame.js?v=11";
 import { createPersonSegmenter } from "./segmentation.js?v=3";
 import { signUp, signIn, signOut, getCurrentUser, fetchCountry } from "./auth.js?v=1";
 import { TURNSTILE_SITE_KEY } from "./config.js?v=1";
+import { createFlappyGame } from "./flappyGame.js?v=1";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -86,6 +87,7 @@ const games = [
   createCatchGame({ canvas, ctx, video }),
   createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, fxCtx }),
 ];
+const normalGames = [createFlappyGame({ canvas, ctx })];
 
 function setScreen(next) {
   screen = next;
@@ -326,6 +328,12 @@ function renderHub() {
           <span>Motion-tracking games that use your webcam. We'll only ask for camera access once you open this.</span>
         </div>
       </button>
+      <button class="game-card" data-action="open-normal-games">
+        <div class="card-body">
+          <strong>🕹️ Normal Games</strong>
+          <span>Classic games you play with your keyboard or mouse — no camera needed.</span>
+        </div>
+      </button>
     </div>
   `;
 }
@@ -336,6 +344,13 @@ function showHub() {
   threeCanvas.classList.add("hidden");
   fxCanvas.classList.add("hidden");
   renderHub();
+}
+
+function ensurePredictLoop() {
+  if (!predictLoopStarted) {
+    predictLoopStarted = true;
+    requestAnimationFrame(predict);
+  }
 }
 
 async function startCameraGames() {
@@ -361,10 +376,7 @@ async function startCameraGames() {
       modelsReady = true;
     }
 
-    if (!predictLoopStarted) {
-      predictLoopStarted = true;
-      requestAnimationFrame(predict);
-    }
+    ensurePredictLoop();
     showMenu();
   } catch (err) {
     console.error(err);
@@ -372,7 +384,18 @@ async function startCameraGames() {
   }
 }
 
-function exitCameraGames() {
+function openNormalGames() {
+  canvas.width = 960;
+  canvas.height = 540;
+  threeCanvas.width = canvas.width;
+  threeCanvas.height = canvas.height;
+  fxCanvas.width = canvas.width;
+  fxCanvas.height = canvas.height;
+  ensurePredictLoop();
+  showNormalMenu();
+}
+
+function exitToHub() {
   if (currentStream) {
     currentStream.getTracks().forEach((t) => t.stop());
     currentStream = null;
@@ -471,7 +494,7 @@ function renderGameOver(result) {
 }
 
 function startGame(gameId) {
-  activeGame = games.find((g) => g.id === gameId);
+  activeGame = games.find((g) => g.id === gameId) || normalGames.find((g) => g.id === gameId);
   if (activeGame.primeAudio) activeGame.primeAudio();
   activeGame.reset();
   setScreen("playing");
@@ -488,6 +511,47 @@ function showMenu() {
   threeCanvas.classList.add("hidden");
   fxCanvas.classList.add("hidden");
   renderMenu();
+}
+
+function renderNormalMenu() {
+  overlay.innerHTML = `
+    <h1>Normal Games</h1>
+    <button class="auth-toggle" type="button" data-action="back-to-hub">← Back</button>
+    <p>No camera needed — just your keyboard or mouse.</p>
+    <div class="game-grid">
+      ${normalGames
+        .map(
+          (g) => `
+        <button class="game-card" data-action="select-game" data-game-id="${g.id}">
+          ${g.thumbnail ? `<img class="card-thumb" src="${g.thumbnail}" alt="" />` : ""}
+          <div class="card-body">
+            <strong>${g.title}</strong>
+            <span>${g.description}</span>
+          </div>
+        </button>`
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function showNormalMenu() {
+  if (activeGame && activeGame.save) activeGame.save();
+  activeGame = null;
+  setScreen("normalMenu");
+  overlay.classList.remove("hidden");
+  threeCanvas.classList.add("hidden");
+  fxCanvas.classList.add("hidden");
+  renderNormalMenu();
+}
+
+function backToGameList() {
+  const wasCameraGame = activeGame && games.includes(activeGame);
+  if (wasCameraGame) {
+    showMenu();
+  } else {
+    showNormalMenu();
+  }
 }
 
 function togglePause() {
@@ -517,14 +581,16 @@ overlay.addEventListener("click", (e) => {
     });
   } else if (action === "open-camera-games") {
     startCameraGames();
+  } else if (action === "open-normal-games") {
+    openNormalGames();
   } else if (action === "back-to-hub") {
-    exitCameraGames();
+    exitToHub();
   } else if (action === "select-game") {
     startGame(btn.dataset.gameId);
   } else if (action === "resume") {
     togglePause();
   } else if (action === "quit") {
-    showMenu();
+    backToGameList();
   } else if (action === "retry") {
     startGame(activeGame.id);
   } else if (action === "upgrade") {
