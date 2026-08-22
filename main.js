@@ -5,7 +5,7 @@ import {
 import { createCatchGame } from "./catchGame.js?v=11";
 import { createFighterGame } from "./fighterGame.js?v=12";
 import { createPersonSegmenter } from "./segmentation.js?v=3";
-import { signUp, signIn, signOut, getCurrentUser, fetchCountry } from "./auth.js?v=1";
+import { signUp, signIn, signOut, getCurrentUser, fetchCountry, supabase } from "./auth.js?v=1";
 import { TURNSTILE_SITE_KEY } from "./config.js?v=1";
 import { createFlappyGame } from "./flappyGame.js?v=2";
 import { createSnakeGame } from "./snakeGame.js?v=2";
@@ -250,6 +250,7 @@ function predict() {
     activeGame.draw(latestLandmarks);
     updateHud();
     if (activeGame.isOver()) {
+      endGameSession();
       setScreen("gameover");
       overlay.classList.remove("hidden");
       renderGameOver(activeGame.getOverResult());
@@ -539,7 +540,46 @@ function renderGameOver(result) {
   `;
 }
 
+let sessionRowId = null;
+let sessionStartedAt = null;
+
+async function beginGameSession(gameId) {
+  await endGameSession();
+  sessionStartedAt = Date.now();
+  try {
+    const { data } = await supabase
+      .from("game_sessions")
+      .insert({ user_id: currentUser?.id ?? null, game_id: gameId, started_at: new Date(sessionStartedAt).toISOString() })
+      .select("id")
+      .single();
+    sessionRowId = data?.id ?? null;
+  } catch (err) {
+    console.warn("Could not record game session start.", err);
+    sessionRowId = null;
+  }
+}
+
+async function endGameSession() {
+  if (!sessionRowId) {
+    sessionStartedAt = null;
+    return;
+  }
+  const rowId = sessionRowId;
+  const durationSeconds = Math.round((Date.now() - sessionStartedAt) / 1000);
+  sessionRowId = null;
+  sessionStartedAt = null;
+  try {
+    await supabase
+      .from("game_sessions")
+      .update({ ended_at: new Date().toISOString(), duration_seconds: durationSeconds })
+      .eq("id", rowId);
+  } catch (err) {
+    console.warn("Could not record game session end.", err);
+  }
+}
+
 function enterPlaying() {
+  beginGameSession(activeGame.id);
   setScreen("playing");
   overlay.classList.add("hidden");
   threeCanvas.classList.toggle("hidden", !activeGame.draw3D);
@@ -566,6 +606,7 @@ function startGame(gameId) {
 }
 
 function showMenu() {
+  endGameSession();
   if (activeGame && activeGame.save) activeGame.save();
   activeGame = null;
   setScreen("menu");
@@ -598,6 +639,7 @@ function renderNormalMenu() {
 }
 
 function showNormalMenu() {
+  endGameSession();
   if (activeGame && activeGame.save) activeGame.save();
   activeGame = null;
   setScreen("normalMenu");
