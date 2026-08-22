@@ -555,46 +555,203 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   }
 
   // ---------------- Rendering ----------------
+  // Faces are drawn in a rotated local frame (+x = the direction the snake is
+  // facing, +y = one side) so each variant is written once, in plain
+  // straight-ahead coordinates, and canvas's own rotate() handles orienting it
+  // to the snake's actual heading — no per-point forward/side math needed.
 
-  function drawSnakeBody(segments, color, highlight, heading) {
+  function drawBlush(r) {
+    ctx.fillStyle = "rgba(248, 113, 113, 0.35)";
+    [-1, 1].forEach((s) => {
+      ctx.beginPath();
+      ctx.ellipse(r * 0.08, r * 0.75 * s, r * 0.16, r * 0.1, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  function faceClassic(r) {
+    ctx.fillStyle = "#0f172a";
+    [-1, 1].forEach((s) => {
+      ctx.beginPath();
+      ctx.arc(r * 0.3, r * 0.45 * s, r * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = r * 0.12;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(r * 0.85, -r * 0.3);
+    ctx.lineTo(r * 0.85, r * 0.3);
+    ctx.stroke();
+  }
+
+  function faceGoogly(r) {
+    [-1, 1].forEach((s) => {
+      ctx.fillStyle = "#f8fafc";
+      ctx.beginPath();
+      ctx.arc(r * 0.28, r * 0.5 * s, r * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(15,23,42,0.35)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = "#0f172a";
+      ctx.beginPath();
+      ctx.arc(r * 0.38, r * 0.5 * s + r * 0.08 * s, r * 0.13, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = r * 0.1;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(r * 0.7, -r * 0.25);
+    ctx.quadraticCurveTo(r * 0.95, 0, r * 0.7, r * 0.25);
+    ctx.stroke();
+  }
+
+  function faceWink(r) {
+    ctx.fillStyle = "#0f172a";
+    ctx.beginPath();
+    ctx.arc(r * 0.3, -r * 0.45, r * 0.17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = r * 0.1;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(r * 0.18, r * 0.45);
+    ctx.lineTo(r * 0.42, r * 0.45);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(r * 0.65, -r * 0.28);
+    ctx.quadraticCurveTo(r * 0.95, 0, r * 0.7, r * 0.32);
+    ctx.stroke();
+  }
+
+  function faceTongue(r) {
+    ctx.fillStyle = "#0f172a";
+    [-1, 1].forEach((s) => {
+      ctx.beginPath();
+      ctx.arc(r * 0.3, r * 0.45 * s, r * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.fillStyle = "#7f1d1d";
+    ctx.beginPath();
+    ctx.arc(r * 0.85, 0, r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#f87171";
+    ctx.lineWidth = r * 0.16;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(r * 0.95, r * 0.1);
+    ctx.lineTo(r * 1.5, r * 0.35);
+    ctx.stroke();
+  }
+
+  function faceAngry(r) {
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = r * 0.13;
+    ctx.lineCap = "round";
+    [-1, 1].forEach((s) => {
+      ctx.beginPath();
+      ctx.moveTo(r * 0.05, r * 0.3 * s);
+      ctx.lineTo(r * 0.42, r * 0.55 * s);
+      ctx.stroke();
+    });
+    ctx.fillStyle = "#0f172a";
+    [-1, 1].forEach((s) => {
+      ctx.beginPath();
+      ctx.arc(r * 0.38, r * 0.45 * s, r * 0.13, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.beginPath();
+    ctx.moveTo(r * 0.85, -r * 0.22);
+    ctx.lineTo(r * 0.85, r * 0.22);
+    ctx.stroke();
+  }
+
+  function faceSurprised(r) {
+    [-1, 1].forEach((s) => {
+      ctx.fillStyle = "#f8fafc";
+      ctx.beginPath();
+      ctx.arc(r * 0.32, r * 0.42 * s, r * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#0f172a";
+      ctx.beginPath();
+      ctx.arc(r * 0.32, r * 0.42 * s, r * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.fillStyle = "#0f172a";
+    ctx.beginPath();
+    ctx.arc(r * 0.88, 0, r * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function faceShades(r) {
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = r * 0.28;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(r * 0.3, -r * 0.5);
+    ctx.lineTo(r * 0.3, r * 0.5);
+    ctx.stroke();
+    ctx.lineWidth = r * 0.1;
+    ctx.beginPath();
+    ctx.moveTo(r * 0.68, -r * 0.25);
+    ctx.quadraticCurveTo(r * 0.95, 0, r * 0.7, r * 0.3);
+    ctx.stroke();
+  }
+
+  function faceBuckTooth(r) {
+    ctx.fillStyle = "#0f172a";
+    [-1, 1].forEach((s) => {
+      ctx.beginPath();
+      ctx.arc(r * 0.3, r * 0.42 * s, r * 0.14, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.fillStyle = "#7f1d1d";
+    ctx.beginPath();
+    ctx.arc(r * 0.85, 0, r * 0.24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#f8fafc";
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 1;
+    ctx.fillRect(r * 0.78, -r * 0.1, r * 0.14, r * 0.24);
+    ctx.strokeRect(r * 0.78, -r * 0.1, r * 0.14, r * 0.24);
+    ctx.fillRect(r * 0.96, -r * 0.1, r * 0.14, r * 0.24);
+    ctx.strokeRect(r * 0.96, -r * 0.1, r * 0.14, r * 0.24);
+  }
+
+  const FACE_VARIANTS = [faceClassic, faceGoogly, faceWink, faceTongue, faceAngry, faceSurprised, faceShades, faceBuckTooth];
+
+  function faceVariantForId(id) {
+    return FACE_VARIANTS[hashString(`${id}-face`) % FACE_VARIANTS.length];
+  }
+
+  function drawSnakeBody(segments, color, highlight, heading, ownerId) {
     if (!segments || segments.length === 0) return;
     ctx.fillStyle = color;
     for (let i = segments.length - 1; i >= 0; i--) {
       const seg = segments[i];
+      const r = i === 0 ? 13 : 10;
       ctx.beginPath();
-      ctx.arc(seg.x, seg.y, 10, 0, Math.PI * 2);
+      ctx.arc(seg.x, seg.y, r, 0, Math.PI * 2);
       ctx.fill();
     }
 
     const head = segments[0];
     if (typeof heading === "number") {
-      const fx = Math.cos(heading);
-      const fy = Math.sin(heading);
-      const px = -fy;
-      const py = fx;
-      ctx.fillStyle = "#0f172a";
-      [-1, 1].forEach((s) => {
-        const ex = head.x + fx * 4 + px * 6 * s;
-        const ey = head.y + fy * 4 + py * 6 * s;
-        ctx.beginPath();
-        ctx.arc(ex, ey, 2.2, 0, Math.PI * 2);
-        ctx.fill();
-      });
-      const mouthX = head.x + fx * 11;
-      const mouthY = head.y + fy * 11;
-      ctx.strokeStyle = "#0f172a";
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.moveTo(mouthX - px * 4, mouthY - py * 4);
-      ctx.lineTo(mouthX + px * 4, mouthY + py * 4);
-      ctx.stroke();
+      ctx.save();
+      ctx.translate(head.x, head.y);
+      ctx.rotate(heading);
+      drawBlush(13);
+      faceVariantForId(ownerId || "?")(13);
+      ctx.restore();
     }
 
     if (highlight) {
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(head.x, head.y, 12, 0, Math.PI * 2);
+      ctx.arc(head.x, head.y, 15, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
@@ -678,11 +835,11 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     const others = mode === "offline" ? bots : opponents;
     for (const s of others.values()) {
       if (s.alive === false) continue;
-      drawSnakeBody(s.segments, colorForId(s.ownerId), false, s.heading);
+      drawSnakeBody(s.segments, colorForId(s.ownerId), false, s.heading, s.ownerId);
     }
 
     if (mySnake.alive) {
-      drawSnakeBody(mySnake.segments, colorForId(myId), true, mySnake.heading);
+      drawSnakeBody(mySnake.segments, colorForId(myId), true, mySnake.heading, myId);
     }
 
     ctx.restore();
