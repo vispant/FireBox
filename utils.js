@@ -10,6 +10,20 @@ export const POSE = {
   RIGHT_ANKLE: 28,
 };
 
+// How many internal canvas pixels are needed to reserve `desiredRealPx` of
+// actual on-screen clearance below the DOM HUD bar. The internal canvas
+// resolution now adapts to each device's aspect ratio (see main.js's
+// computeViewportResolution), so a fixed pixel offset that looked right on a
+// landscape laptop can end up far too thin — or, on a very wide canvas, overly
+// generous — once the internal-px-per-real-px ratio changes. Games that draw
+// UI near the top of the canvas (HUD-adjacent panels, game boards) should
+// derive their top clearance from this instead of a bare constant.
+export function hudClearance(canvas, desiredRealPx) {
+  const rect = canvas.getBoundingClientRect();
+  const scale = rect.height > 0 ? canvas.height / rect.height : 1;
+  return desiredRealPx * scale;
+}
+
 export function toCanvasCoords(landmark, canvasWidth, canvasHeight) {
   // Landmarks are normalized [0,1] against the raw (unmirrored) video.
   // The camera feed is drawn mirrored, so flip x to match what the player sees.

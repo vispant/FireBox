@@ -1,4 +1,4 @@
-import { POSE, toCanvasCoords, drawFaceEmoji } from "./utils.js?v=4";
+import { POSE, toCanvasCoords, drawFaceEmoji } from "./utils.js?v=5";
 
 const HAND_RADIUS = 26;
 const CATCHES_PER_LEVEL = 5;

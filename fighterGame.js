@@ -1,4 +1,4 @@
-import { POSE, toCanvasCoords, drawFaceEmoji } from "./utils.js?v=4";
+import { POSE, toCanvasCoords, drawFaceEmoji } from "./utils.js?v=5";
 import {
   createFighter3D,
   HEAD_TOP_OFFSET,

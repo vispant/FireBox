@@ -2,16 +2,16 @@ import {
   PoseLandmarker,
   FilesetResolver,
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
-import { createCatchGame } from "./catchGame.js?v=10";
-import { createFighterGame } from "./fighterGame.js?v=11";
+import { createCatchGame } from "./catchGame.js?v=11";
+import { createFighterGame } from "./fighterGame.js?v=12";
 import { createPersonSegmenter } from "./segmentation.js?v=3";
 import { signUp, signIn, signOut, getCurrentUser, fetchCountry } from "./auth.js?v=1";
 import { TURNSTILE_SITE_KEY } from "./config.js?v=1";
 import { createFlappyGame } from "./flappyGame.js?v=2";
 import { createSnakeGame } from "./snakeGame.js?v=2";
 import { createWhackGame } from "./whackGame.js?v=1";
-import { createSnakeArenaGame } from "./snakeArenaGame.js?v=4";
-import { createBrickGame } from "./brickGame.js?v=1";
+import { createSnakeArenaGame } from "./snakeArenaGame.js?v=5";
+import { createBrickGame } from "./brickGame.js?v=4";
 import { createRunnerGame } from "./runnerGame.js?v=1";
 
 const video = document.getElementById("webcam");
@@ -105,6 +105,34 @@ const normalGames = [
   createRunnerGame({ canvas, ctx }),
 ];
 
+// Picks a canvas/camera resolution matching this device's actual viewport shape
+// (instead of always requesting/using a fixed 960x540 landscape frame), so
+// object-fit:cover on the outer canvas doesn't have to crop away most of a
+// portrait phone screen. Baseline stays 960x540 for a typical laptop window —
+// this only changes behavior when the real aspect ratio differs meaningfully.
+function computeViewportResolution() {
+  const aspect = window.innerWidth / window.innerHeight;
+  const BASE = 540;
+  const MAX_DIM = 1280;
+  let width, height;
+  if (aspect >= 1) {
+    height = BASE;
+    width = Math.round(BASE * aspect);
+    if (width > MAX_DIM) {
+      width = MAX_DIM;
+      height = Math.round(MAX_DIM / aspect);
+    }
+  } else {
+    width = BASE;
+    height = Math.round(BASE / aspect);
+    if (height > MAX_DIM) {
+      height = MAX_DIM;
+      width = Math.round(MAX_DIM * aspect);
+    }
+  }
+  return { width, height };
+}
+
 function setScreen(next) {
   screen = next;
   hud.classList.toggle("hidden", screen !== "playing");
@@ -115,7 +143,8 @@ async function setupCamera(deviceId) {
     currentStream.getTracks().forEach((t) => t.stop());
   }
 
-  const videoConstraints = { width: 960, height: 540 };
+  const res = computeViewportResolution();
+  const videoConstraints = { width: res.width, height: res.height };
   if (deviceId) videoConstraints.deviceId = { exact: deviceId };
 
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -401,8 +430,9 @@ async function startCameraGames() {
 }
 
 function openNormalGames() {
-  canvas.width = 960;
-  canvas.height = 540;
+  const res = computeViewportResolution();
+  canvas.width = res.width;
+  canvas.height = res.height;
   threeCanvas.width = canvas.width;
   threeCanvas.height = canvas.height;
   fxCanvas.width = canvas.width;

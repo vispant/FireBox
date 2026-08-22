@@ -9,6 +9,7 @@ import {
   heartbeatRoom,
   removeRoom,
 } from "./multiplayer.js?v=2";
+import { hudClearance } from "./utils.js?v=5";
 
 const ARENA_RADIUS = 1500;
 const SPEED = 180; // px/s
@@ -611,7 +612,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
 
     const panelW = 190;
     const panelX = canvas.width - panelW - 14;
-    const panelY = 16;
+    const panelY = Math.max(16, hudClearance(canvas, 90));
     const rowH = 20;
     ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
     ctx.fillRect(panelX, panelY, panelW, 30 + top.length * rowH);

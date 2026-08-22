@@ -1,3 +1,5 @@
+import { hudClearance } from "./utils.js?v=5";
+
 const PADDLE_WIDTH = 120;
 const PADDLE_HEIGHT = 16;
 const BALL_RADIUS = 8;
@@ -60,12 +62,13 @@ export function createBrickGame({ canvas, ctx }) {
 
   function buildBricks() {
     bricks = [];
+    const topMargin = Math.max(BRICK_TOP_MARGIN, hudClearance(canvas, 125));
     const brickWidth = (canvas.width - BRICK_GAP * (BRICK_COLS + 1)) / BRICK_COLS;
     for (let row = 0; row < BRICK_ROWS; row++) {
       for (let col = 0; col < BRICK_COLS; col++) {
         bricks.push({
           x: BRICK_GAP + col * (brickWidth + BRICK_GAP),
-          y: BRICK_TOP_MARGIN + row * (BRICK_HEIGHT + BRICK_GAP),
+          y: topMargin + row * (BRICK_HEIGHT + BRICK_GAP),
           w: brickWidth,
           h: BRICK_HEIGHT,
           color: BRICK_COLORS[row % BRICK_COLORS.length],
