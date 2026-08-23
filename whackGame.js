@@ -9,6 +9,24 @@ const VISIBLE_END = 0.55;
 const COINS_PER_HIT = 10;
 const BEST_KEY = "fireBox.whack.best.v1";
 
+const CRITTER_SRCS = [
+  "Asset/kenney_animal-pack/PNG/Round/hippo.png",
+  "Asset/kenney_animal-pack/PNG/Round/pig.png",
+  "Asset/kenney_animal-pack/PNG/Round/monkey.png",
+  "Asset/kenney_animal-pack/PNG/Round/panda.png",
+  "Asset/kenney_animal-pack/PNG/Round/rabbit.png",
+  "Asset/kenney_animal-pack/PNG/Round/giraffe.png",
+];
+
+function loadSprite(src) {
+  const sprite = { img: new Image(), loaded: false };
+  sprite.img.onload = () => {
+    sprite.loaded = true;
+  };
+  sprite.img.src = src;
+  return sprite;
+}
+
 function loadBest() {
   try {
     return Number(localStorage.getItem(BEST_KEY)) || 0;
@@ -28,6 +46,8 @@ function lerp(a, b, t) {
 }
 
 export function createWhackGame({ canvas, ctx }) {
+  const critterSprites = CRITTER_SRCS.map(loadSprite);
+
   let holes = [];
   let floaters = [];
   let coins = 0;
@@ -50,6 +70,7 @@ export function createWhackGame({ canvas, ctx }) {
           y: marginY + (usableH * (r + 0.5)) / ROWS,
           active: false,
           timer: 0,
+          critter: 0,
         });
       }
     }
@@ -109,6 +130,7 @@ export function createWhackGame({ canvas, ctx }) {
     const hole = idle[Math.floor(Math.random() * idle.length)];
     hole.active = true;
     hole.timer = duration;
+    hole.critter = Math.floor(Math.random() * critterSprites.length);
   }
 
   function update(dt) {
@@ -156,21 +178,32 @@ export function createWhackGame({ canvas, ctx }) {
       ctx.fill();
 
       if (hole.active) {
-        ctx.fillStyle = "#92400e";
-        ctx.beginPath();
-        ctx.ellipse(hole.x, hole.y - 8, HOLE_RADIUS * 0.6, HOLE_RADIUS * 0.7, 0, 0, Math.PI * 2);
-        ctx.fill();
+        const sprite = critterSprites[hole.critter];
+        if (sprite.loaded) {
+          const s = HOLE_RADIUS * 1.5;
+          ctx.save();
+          ctx.beginPath();
+          ctx.ellipse(hole.x, hole.y + 10, HOLE_RADIUS, HOLE_RADIUS * 0.55, 0, 0, Math.PI * 2);
+          ctx.clip();
+          ctx.drawImage(sprite.img, hole.x - s / 2, hole.y - s * 0.72, s, s);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = "#92400e";
+          ctx.beginPath();
+          ctx.ellipse(hole.x, hole.y - 8, HOLE_RADIUS * 0.6, HOLE_RADIUS * 0.7, 0, 0, Math.PI * 2);
+          ctx.fill();
 
-        ctx.fillStyle = "#0f172a";
-        ctx.beginPath();
-        ctx.arc(hole.x - 12, hole.y - 15, 4, 0, Math.PI * 2);
-        ctx.arc(hole.x + 12, hole.y - 15, 4, 0, Math.PI * 2);
-        ctx.fill();
+          ctx.fillStyle = "#0f172a";
+          ctx.beginPath();
+          ctx.arc(hole.x - 12, hole.y - 15, 4, 0, Math.PI * 2);
+          ctx.arc(hole.x + 12, hole.y - 15, 4, 0, Math.PI * 2);
+          ctx.fill();
 
-        ctx.fillStyle = "#f472b6";
-        ctx.beginPath();
-        ctx.arc(hole.x, hole.y - 2, 5, 0, Math.PI * 2);
-        ctx.fill();
+          ctx.fillStyle = "#f472b6";
+          ctx.beginPath();
+          ctx.arc(hole.x, hole.y - 2, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
 

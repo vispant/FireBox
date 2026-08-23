@@ -7,11 +7,11 @@ import { createFighterGame } from "./fighterGame.js?v=12";
 import { createPersonSegmenter } from "./segmentation.js?v=3";
 import { signUp, signIn, signOut, getCurrentUser, fetchCountry, supabase } from "./auth.js?v=1";
 import { TURNSTILE_SITE_KEY } from "./config.js?v=1";
-import { createFlappyGame } from "./flappyGame.js?v=2";
-import { createSnakeGame } from "./snakeGame.js?v=2";
-import { createWhackGame } from "./whackGame.js?v=1";
+import { createFlappyGame } from "./flappyGame.js?v=3";
+import { createSnakeGame } from "./snakeGame.js?v=3";
+import { createWhackGame } from "./whackGame.js?v=2";
 import { createSnakeArenaGame } from "./snakeArenaGame.js?v=11";
-import { createBrickGame } from "./brickGame.js?v=4";
+import { createBrickGame } from "./brickGame.js?v=5";
 import { createRunnerGame } from "./runnerGame.js?v=2";
 import { createHopperGame } from "./hopperGame.js?v=4";
 

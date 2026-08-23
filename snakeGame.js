@@ -5,6 +5,18 @@ const SPEEDUP_EVERY = 5; // food eaten
 const SPEEDUP_STEP = 12; // ms faster per tier
 const BEST_KEY = "fireBox.snake.best.v1";
 
+const HEAD_SRC = "Asset/kenney_animal-pack/PNG/Round/snake.png";
+const FOOD_SRC = "Asset/kenney_jumper-pack/PNG/Items/carrot.png";
+
+function loadSprite(src) {
+  const sprite = { img: new Image(), loaded: false };
+  sprite.img.onload = () => {
+    sprite.loaded = true;
+  };
+  sprite.img.src = src;
+  return sprite;
+}
+
 function loadBest() {
   try {
     return Number(localStorage.getItem(BEST_KEY)) || 0;
@@ -20,6 +32,9 @@ function saveBest(value) {
 }
 
 export function createSnakeGame({ canvas, ctx }) {
+  const headSprite = loadSprite(HEAD_SRC);
+  const foodSprite = loadSprite(FOOD_SRC);
+
   let cols = 1;
   let rows = 1;
   let snake = [];
@@ -127,14 +142,35 @@ export function createSnakeGame({ canvas, ctx }) {
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = "#f87171";
-    ctx.beginPath();
-    ctx.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL * 0.38, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.08)";
+    ctx.lineWidth = 1;
+    for (let x = 1; x < cols; x++) {
+      ctx.beginPath();
+      ctx.moveTo(x * CELL, 0);
+      ctx.lineTo(x * CELL, rows * CELL);
+      ctx.stroke();
+    }
+    for (let y = 1; y < rows; y++) {
+      ctx.beginPath();
+      ctx.moveTo(0, y * CELL);
+      ctx.lineTo(cols * CELL, y * CELL);
+      ctx.stroke();
+    }
+
+    if (foodSprite.loaded) {
+      const s = CELL * 0.95;
+      ctx.drawImage(foodSprite.img, food.x * CELL + CELL / 2 - s / 2, food.y * CELL + CELL / 2 - s / 2, s, s);
+    } else {
+      ctx.fillStyle = "#f87171";
+      ctx.beginPath();
+      ctx.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL * 0.38, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     snake.forEach((seg, i) => {
-      ctx.fillStyle = i === 0 ? "#4ade80" : "#22c55e";
-      const pad = i === 0 ? 1 : 2;
+      if (i === 0) return;
+      ctx.fillStyle = "#22c55e";
+      const pad = 2;
       ctx.fillRect(seg.x * CELL + pad, seg.y * CELL + pad, CELL - pad * 2, CELL - pad * 2);
     });
 
@@ -143,26 +179,37 @@ export function createSnakeGame({ canvas, ctx }) {
     const cy = head.y * CELL + CELL / 2;
     const fx = direction.x;
     const fy = direction.y;
-    const px = -fy;
-    const py = fx;
 
-    ctx.fillStyle = "#0f172a";
-    [-1, 1].forEach((s) => {
-      const ex = cx + fx * CELL * 0.12 + px * CELL * 0.22 * s;
-      const ey = cy + fy * CELL * 0.12 + py * CELL * 0.22 * s;
+    if (headSprite.loaded) {
+      const angle = Math.atan2(fy, fx) - Math.PI / 2;
+      const s = CELL * 1.3;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+      ctx.drawImage(headSprite.img, -s / 2, -s / 2, s, s);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#4ade80";
+      ctx.fillRect(head.x * CELL + 1, head.y * CELL + 1, CELL - 2, CELL - 2);
+      const px = -fy;
+      const py = fx;
+      ctx.fillStyle = "#0f172a";
+      [-1, 1].forEach((s) => {
+        const ex = cx + fx * CELL * 0.12 + px * CELL * 0.22 * s;
+        const ey = cy + fy * CELL * 0.12 + py * CELL * 0.22 * s;
+        ctx.beginPath();
+        ctx.arc(ex, ey, CELL * 0.09, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      const mouthX = cx + fx * CELL * 0.42;
+      const mouthY = cy + fy * CELL * 0.42;
+      ctx.strokeStyle = "#0f172a";
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(ex, ey, CELL * 0.09, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    const mouthX = cx + fx * CELL * 0.42;
-    const mouthY = cy + fy * CELL * 0.42;
-    ctx.strokeStyle = "#0f172a";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(mouthX - px * CELL * 0.15, mouthY - py * CELL * 0.15);
-    ctx.lineTo(mouthX + px * CELL * 0.15, mouthY + py * CELL * 0.15);
-    ctx.stroke();
+      ctx.moveTo(mouthX - px * CELL * 0.15, mouthY - py * CELL * 0.15);
+      ctx.lineTo(mouthX + px * CELL * 0.15, mouthY + py * CELL * 0.15);
+      ctx.stroke();
+    }
   }
 
   function isOver() {

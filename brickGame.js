@@ -15,6 +15,16 @@ const LIVES_START = 3;
 const BEST_KEY = "fireBox.brick.best.v1";
 
 const BRICK_COLORS = ["#f87171", "#fb923c", "#fbbf24", "#4ade80", "#60a5fa"];
+const BALL_SRC = "Asset/kenney_jumper-pack/PNG/HUD/coin_gold.png";
+
+function loadSprite(src) {
+  const sprite = { img: new Image(), loaded: false };
+  sprite.img.onload = () => {
+    sprite.loaded = true;
+  };
+  sprite.img.src = src;
+  return sprite;
+}
 
 function loadBest() {
   try {
@@ -31,6 +41,8 @@ function saveBest(value) {
 }
 
 export function createBrickGame({ canvas, ctx }) {
+  const ballSprite = loadSprite(BALL_SRC);
+
   let paddleX = canvas.width / 2;
   let ball = { x: 0, y: 0, vx: 0, vy: 0 };
   let bricks = [];
@@ -237,13 +249,24 @@ export function createBrickGame({ canvas, ctx }) {
       ctx.fillRect(brick.x, brick.y, brick.w, brick.h);
     }
 
-    ctx.fillStyle = "#e2e8f0";
-    ctx.fillRect(paddleX - PADDLE_WIDTH / 2, canvas.height - 60, PADDLE_WIDTH, PADDLE_HEIGHT);
-
-    ctx.fillStyle = "#f8fafc";
+    const paddleY = canvas.height - 60;
+    const paddleGrad = ctx.createLinearGradient(0, paddleY, 0, paddleY + PADDLE_HEIGHT);
+    paddleGrad.addColorStop(0, "#f1f5f9");
+    paddleGrad.addColorStop(1, "#94a3b8");
+    ctx.fillStyle = paddleGrad;
     ctx.beginPath();
-    ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+    ctx.roundRect(paddleX - PADDLE_WIDTH / 2, paddleY, PADDLE_WIDTH, PADDLE_HEIGHT, PADDLE_HEIGHT / 2);
     ctx.fill();
+
+    if (ballSprite.loaded) {
+      const s = BALL_RADIUS * 2.3;
+      ctx.drawImage(ballSprite.img, ball.x - s / 2, ball.y - s / 2, s, s);
+    } else {
+      ctx.fillStyle = "#f8fafc";
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     for (const p of particles) {
       ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
