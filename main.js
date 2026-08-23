@@ -10,10 +10,11 @@ import { TURNSTILE_SITE_KEY } from "./config.js?v=1";
 import { createFlappyGame } from "./flappyGame.js?v=3";
 import { createSnakeGame } from "./snakeGame.js?v=3";
 import { createWhackGame } from "./whackGame.js?v=2";
-import { createSnakeArenaGame } from "./snakeArenaGame.js?v=11";
+import { createSnakeArenaGame } from "./snakeArenaGame.js?v=12";
 import { createBrickGame } from "./brickGame.js?v=5";
 import { createRunnerGame } from "./runnerGame.js?v=2";
 import { createHopperGame } from "./hopperGame.js?v=4";
+import { createBombArenaGame } from "./bombArenaGame.js?v=7";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -105,6 +106,7 @@ const normalGames = [
   createBrickGame({ canvas, ctx }),
   createRunnerGame({ canvas, ctx }),
   createHopperGame({ canvas, ctx }),
+  createBombArenaGame({ canvas, ctx, getPlayerName }),
 ];
 
 // Picks a canvas/camera resolution matching this device's actual viewport shape

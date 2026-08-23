@@ -4,12 +4,12 @@ export function generateRoomCode() {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
-export function roomChannelName(code) {
-  return `firebox-snake-arena-${code}`;
+export function roomChannelName(code, prefix = "snake-arena") {
+  return `firebox-${prefix}-${code}`;
 }
 
-export function createRoomChannel(code, presenceKey) {
-  return supabase.channel(roomChannelName(code), {
+export function createRoomChannel(code, presenceKey, prefix = "snake-arena") {
+  return supabase.channel(roomChannelName(code, prefix), {
     config: { presence: { key: presenceKey } },
   });
 }

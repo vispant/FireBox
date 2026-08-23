@@ -8,7 +8,7 @@ import {
   registerPublicRoom,
   heartbeatRoom,
   removeRoom,
-} from "./multiplayer.js?v=2";
+} from "./multiplayer.js?v=3";
 import { hudClearance } from "./utils.js?v=5";
 
 const ARENA_RADIUS = 1500;
