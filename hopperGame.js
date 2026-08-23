@@ -15,10 +15,33 @@ const COIN_VALUE = 5;
 const COIN_CHANCE = 0.35;
 const MAX_UPGRADE_LEVEL = 3;
 const SAFETY_BOUNCE_VELOCITY = 900;
+const CLOUD_SPACING_MIN = 220;
+const CLOUD_SPACING_MAX = 380;
 
 const SAVE_KEY = "fireBox.hopper.save.v1";
 const BEST_SCORE_KEY = "fireBox.hopper.bestScore.v1";
 const CHARACTER_SRC = "Asset/kenney_animal-pack/PNG/Round/penguin.png";
+const PLATFORM_SRC = "Asset/kenney_jumper-pack/PNG/Environment/ground_grass_small.png";
+const COIN_SRC = "Asset/kenney_jumper-pack/PNG/HUD/coin_gold.png";
+const HILL_FAR_SRC = "Asset/kenney_jumper-pack/PNG/Background/bg_layer3.png";
+const HILL_NEAR_SRC = "Asset/kenney_jumper-pack/PNG/Background/bg_layer4.png";
+const SUN_SRC = "Asset/kenney_background-elements/PNG/sun.png";
+const CLOUD_SRCS = [
+  "Asset/kenney_background-elements/PNG/Flat/cloud1.png",
+  "Asset/kenney_background-elements/PNG/Flat/cloud3.png",
+  "Asset/kenney_background-elements/PNG/Flat/cloud5.png",
+  "Asset/kenney_background-elements/PNG/Flat/cloud7.png",
+  "Asset/kenney_background-elements/PNG/Flat/cloud9.png",
+];
+
+function loadSprite(src) {
+  const sprite = { img: new Image(), loaded: false };
+  sprite.img.onload = () => {
+    sprite.loaded = true;
+  };
+  sprite.img.src = src;
+  return sprite;
+}
 
 function loadSaveData() {
   try {
@@ -59,6 +82,13 @@ export function createHopperGame({ canvas, ctx }) {
   };
   characterImg.src = CHARACTER_SRC;
 
+  const platformSprite = loadSprite(PLATFORM_SRC);
+  const coinSprite = loadSprite(COIN_SRC);
+  const hillFarSprite = loadSprite(HILL_FAR_SRC);
+  const hillNearSprite = loadSprite(HILL_NEAR_SRC);
+  const sunSprite = loadSprite(SUN_SRC);
+  const cloudSprites = CLOUD_SRCS.map(loadSprite);
+
   let charX = 0;
   let charY = 0;
   let velX = 0;
@@ -68,7 +98,11 @@ export function createHopperGame({ canvas, ctx }) {
   let cameraY = 0;
   let platforms = [];
   let coins = [];
+  let clouds = [];
   let nextPlatformTop = 0;
+  let nextCloudTop = 0;
+  let groundY = 0;
+  let sunWorldY = 0;
   let score = 0;
   let runCoins = 0;
   let lives = 1;
@@ -107,6 +141,23 @@ export function createHopperGame({ canvas, ctx }) {
     }
   }
 
+  function spawnCloud(topY) {
+    clouds.push({
+      x: Math.random() * canvas.width,
+      y: topY,
+      variant: Math.floor(Math.random() * cloudSprites.length),
+      scale: 0.7 + Math.random() * 0.5,
+    });
+  }
+
+  function fillCloudsUpTo(targetTop) {
+    while (nextCloudTop > targetTop) {
+      const spacing = CLOUD_SPACING_MIN + Math.random() * (CLOUD_SPACING_MAX - CLOUD_SPACING_MIN);
+      nextCloudTop -= spacing;
+      spawnCloud(nextCloudTop);
+    }
+  }
+
   function bankRunCoins() {
     if (runCoins > 0) {
       saveData.coins += runCoins;
@@ -124,10 +175,15 @@ export function createHopperGame({ canvas, ctx }) {
     facing = 1;
     squash = 1;
     cameraY = 0;
+    groundY = canvas.height - 60;
+    sunWorldY = groundY - 3200;
     platforms = [{ x: canvas.width / 2 - 60, y: canvas.height - 60, width: 120 }];
     coins = [];
     nextPlatformTop = canvas.height - 60;
     fillPlatformsUpTo(-canvas.height * 1.5);
+    clouds = [];
+    nextCloudTop = canvas.height - 60;
+    fillCloudsUpTo(-canvas.height * 1.5);
     score = 0;
     runCoins = 0;
     lives = 1 + saveData.extraLifeLevel;
@@ -211,6 +267,9 @@ export function createHopperGame({ canvas, ctx }) {
     platforms = platforms.filter((p) => p.y - cameraY < canvas.height + 200);
     coins = coins.filter((c) => !c.taken && c.y - cameraY < canvas.height + 200);
 
+    fillCloudsUpTo(cameraY - canvas.height * 0.5);
+    clouds = clouds.filter((c) => c.y - cameraY < canvas.height + 300);
+
     if (charY - cameraY > canvas.height + CHARACTER_RADIUS) {
       if (lives > 1) {
         lives -= 1;
@@ -241,6 +300,43 @@ export function createHopperGame({ canvas, ctx }) {
     ctx.restore();
   }
 
+  function drawSun() {
+    if (!sunSprite.loaded) return;
+    const y = sunWorldY - cameraY;
+    const size = 150;
+    if (y < -size || y > canvas.height + size) return;
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(sunSprite.img, canvas.width * 0.72 - size / 2, y - size / 2, size, size);
+    ctx.restore();
+  }
+
+  function drawClouds() {
+    for (const c of clouds) {
+      const y = c.y - cameraY;
+      if (y < -180 || y > canvas.height + 180) continue;
+      const sprite = cloudSprites[c.variant];
+      if (!sprite.loaded) continue;
+      const w = 130 * c.scale;
+      const h = w * (sprite.img.naturalHeight / sprite.img.naturalWidth);
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      ctx.drawImage(sprite.img, c.x - w / 2, y - h / 2, w, h);
+      ctx.restore();
+    }
+  }
+
+  function drawGroundScene() {
+    const size = canvas.width;
+    for (const sprite of [hillFarSprite, hillNearSprite]) {
+      if (!sprite.loaded) continue;
+      const worldTopY = sprite === hillFarSprite ? groundY - size * 0.6 : groundY - size * 0.56;
+      const y = worldTopY - cameraY;
+      if (y > canvas.height || y + size < 0) continue;
+      ctx.drawImage(sprite.img, 0, y, size, size);
+    }
+  }
+
   function draw() {
     const climbT = Math.min(1, score / 600);
     const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -249,23 +345,37 @@ export function createHopperGame({ canvas, ctx }) {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    drawSun();
+    drawClouds();
+    drawGroundScene();
+
     for (const p of platforms) {
       const y = p.y - cameraY;
-      if (y < -PLATFORM_HEIGHT || y > canvas.height + PLATFORM_HEIGHT) continue;
-      ctx.fillStyle = "#4ade80";
-      ctx.fillRect(p.x, y, p.width, PLATFORM_HEIGHT);
-      ctx.fillStyle = "rgba(255,255,255,0.25)";
-      ctx.fillRect(p.x, y, p.width, 4);
+      if (y < -80 || y > canvas.height + 80) continue;
+      if (platformSprite.loaded) {
+        const h = p.width * (platformSprite.img.naturalHeight / platformSprite.img.naturalWidth);
+        ctx.drawImage(platformSprite.img, p.x, y, p.width, h);
+      } else {
+        ctx.fillStyle = "#4ade80";
+        ctx.fillRect(p.x, y, p.width, PLATFORM_HEIGHT);
+        ctx.fillStyle = "rgba(255,255,255,0.25)";
+        ctx.fillRect(p.x, y, p.width, 4);
+      }
     }
 
-    ctx.fillStyle = "#fbbf24";
     for (const c of coins) {
       if (c.taken) continue;
       const y = c.y - cameraY;
       if (y < -20 || y > canvas.height + 20) continue;
-      ctx.beginPath();
-      ctx.arc(c.x, y, COIN_RADIUS, 0, Math.PI * 2);
-      ctx.fill();
+      if (coinSprite.loaded) {
+        const s = COIN_RADIUS * 2.4;
+        ctx.drawImage(coinSprite.img, c.x - s / 2, y - s / 2, s, s);
+      } else {
+        ctx.fillStyle = "#fbbf24";
+        ctx.beginPath();
+        ctx.arc(c.x, y, COIN_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     drawCharacter();
