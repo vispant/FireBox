@@ -12,7 +12,7 @@ import { createSnakeGame } from "./snakeGame.js?v=2";
 import { createWhackGame } from "./whackGame.js?v=1";
 import { createSnakeArenaGame } from "./snakeArenaGame.js?v=11";
 import { createBrickGame } from "./brickGame.js?v=4";
-import { createRunnerGame } from "./runnerGame.js?v=1";
+import { createRunnerGame } from "./runnerGame.js?v=2";
 import { createHopperGame } from "./hopperGame.js?v=4";
 
 const video = document.getElementById("webcam");
