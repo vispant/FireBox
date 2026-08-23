@@ -15,6 +15,7 @@ const COIN_VALUE = 5;
 const COIN_CHANCE = 0.35;
 const MAX_UPGRADE_LEVEL = 3;
 const SAFETY_BOUNCE_VELOCITY = 900;
+const REACH_SAFETY = 0.78; // shrink the physics-perfect reach so it doesn't require frame-perfect steering
 const CLOUD_SPACING_MIN = 220;
 const CLOUD_SPACING_MAX = 380;
 
@@ -68,6 +69,31 @@ function upgradeCost(level) {
   return 40 + level * 45;
 }
 
+// How far sideways the character can actually travel, starting from a dead
+// stop, before it falls back down through a point `spacing` above the bounce
+// origin — collision only triggers while falling (see the `velY > 0` guard in
+// update()), so that's the real deadline, not the moment it first rises past
+// that height. Without this, spawnPlatform() picked x completely at random
+// and could place two platforms further apart horizontally than any amount
+// of steering could cover in the time available, making them unreachable.
+function maxHorizontalReach(spacing) {
+  const a = GRAVITY / 2;
+  const b = -BOUNCE_VELOCITY;
+  const c = spacing;
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant <= 0) return 0; // spacing exceeds the max reachable height entirely
+  const fallThroughTime = (-b + Math.sqrt(discriminant)) / (2 * a);
+  const accelTime = HORIZONTAL_MAX_SPEED / HORIZONTAL_ACCEL;
+  let distance;
+  if (fallThroughTime <= accelTime) {
+    distance = 0.5 * HORIZONTAL_ACCEL * fallThroughTime * fallThroughTime;
+  } else {
+    const accelDistance = 0.5 * HORIZONTAL_ACCEL * accelTime * accelTime;
+    distance = accelDistance + HORIZONTAL_MAX_SPEED * (fallThroughTime - accelTime);
+  }
+  return distance * REACH_SAFETY;
+}
+
 export function createHopperGame({ canvas, ctx }) {
   let saveData = loadSaveData();
   let best = 0;
@@ -100,6 +126,7 @@ export function createHopperGame({ canvas, ctx }) {
   let coins = [];
   let clouds = [];
   let nextPlatformTop = 0;
+  let lastPlatformCenterX = 0;
   let nextCloudTop = 0;
   let groundY = 0;
   let sunWorldY = 0;
@@ -124,9 +151,14 @@ export function createHopperGame({ canvas, ctx }) {
     return Math.max(PLATFORM_WIDTH_MIN, PLATFORM_WIDTH_BASE - Math.min(score, 400) * 0.05 + saveData.wideLevel * 12);
   }
 
-  function spawnPlatform(topY) {
+  function spawnPlatform(topY, spacing) {
     const w = platformWidth();
-    const x = Math.random() * (canvas.width - w);
+    const reach = maxHorizontalReach(spacing);
+    const minCenter = Math.max(w / 2, lastPlatformCenterX - reach);
+    const maxCenter = Math.min(canvas.width - w / 2, lastPlatformCenterX + reach);
+    const centerX = minCenter >= maxCenter ? Math.max(w / 2, Math.min(canvas.width - w / 2, lastPlatformCenterX)) : minCenter + Math.random() * (maxCenter - minCenter);
+    const x = centerX - w / 2;
+    lastPlatformCenterX = centerX;
     platforms.push({ x, y: topY, width: w });
     if (Math.random() < COIN_CHANCE) {
       coins.push({ x: x + w / 2, y: topY - 28, taken: false });
@@ -137,7 +169,7 @@ export function createHopperGame({ canvas, ctx }) {
     while (nextPlatformTop > targetTop) {
       const spacing = PLATFORM_SPACING_MIN + Math.random() * (PLATFORM_SPACING_MAX - PLATFORM_SPACING_MIN);
       nextPlatformTop -= spacing;
-      spawnPlatform(nextPlatformTop);
+      spawnPlatform(nextPlatformTop, spacing);
     }
   }
 
@@ -180,6 +212,7 @@ export function createHopperGame({ canvas, ctx }) {
     platforms = [{ x: canvas.width / 2 - 60, y: canvas.height - 60, width: 120 }];
     coins = [];
     nextPlatformTop = canvas.height - 60;
+    lastPlatformCenterX = canvas.width / 2;
     fillPlatformsUpTo(-canvas.height * 1.5);
     clouds = [];
     nextCloudTop = canvas.height - 60;
