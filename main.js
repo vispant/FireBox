@@ -546,6 +546,20 @@ function renderGameOver(result) {
 
 let sessionRowId = null;
 let sessionStartedAt = null;
+const GUEST_ID_KEY = "fireBox.guestId.v1";
+
+function getGuestId() {
+  try {
+    let id = localStorage.getItem(GUEST_ID_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(GUEST_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+}
 
 async function beginGameSession(gameId) {
   await endGameSession();
@@ -553,7 +567,12 @@ async function beginGameSession(gameId) {
   try {
     const { data } = await supabase
       .from("game_sessions")
-      .insert({ user_id: currentUser?.id ?? null, game_id: gameId, started_at: new Date(sessionStartedAt).toISOString() })
+      .insert({
+        user_id: currentUser?.id ?? null,
+        guest_id: getGuestId(),
+        game_id: gameId,
+        started_at: new Date(sessionStartedAt).toISOString(),
+      })
       .select("id")
       .single();
     sessionRowId = data?.id ?? null;
