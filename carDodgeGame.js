@@ -6,7 +6,7 @@ const PLAYER_HEIGHT = 96;
 const CAR_WIDTH = 56;
 const CAR_HEIGHT = 96;
 const HITBOX_SHRINK = 0.8; // hitboxes are a bit smaller than the drawn car — forgiving, standard practice
-const PLAYER_MOVE_SPEED = 520; // px/s — free horizontal movement, not locked to lane slots
+const LANE_CHANGE_SPEED = 900; // px/s the car eases toward its target lane at
 const BASE_SPEED = 260;
 const MAX_SPEED = 760; // ceiling for the passive speed ramp — boost can exceed this
 const ACCEL_PER_SEC = 6.5;
@@ -202,10 +202,9 @@ export function createCarDodgeGame({ canvas, ctx }) {
   let gameOver = true;
 
   let playerCar = carById(saveData.selectedCarId);
+  let playerLane = 1;
   let playerX = 0;
   let playerY = 0;
-  let leftHeld = false;
-  let rightHeld = false;
   let boostHeld = false;
 
   let cars = [];
@@ -223,13 +222,15 @@ export function createCarDodgeGame({ canvas, ctx }) {
 
   window.addEventListener("keydown", (e) => {
     if (gameOver) return;
-    if (e.code === "ArrowLeft" || e.code === "KeyA") {
-      leftHeld = true;
-      e.preventDefault();
-    }
-    if (e.code === "ArrowRight" || e.code === "KeyD") {
-      rightHeld = true;
-      e.preventDefault();
+    if (!e.repeat) {
+      if (e.code === "ArrowLeft" || e.code === "KeyA") {
+        playerLane = Math.max(0, playerLane - 1);
+        e.preventDefault();
+      }
+      if (e.code === "ArrowRight" || e.code === "KeyD") {
+        playerLane = Math.min(LANE_COUNT - 1, playerLane + 1);
+        e.preventDefault();
+      }
     }
     if (e.code === "ArrowUp" || e.code === "KeyW" || e.code === "ShiftLeft" || e.code === "ShiftRight") {
       boostHeld = true;
@@ -237,8 +238,6 @@ export function createCarDodgeGame({ canvas, ctx }) {
     }
   });
   window.addEventListener("keyup", (e) => {
-    if (e.code === "ArrowLeft" || e.code === "KeyA") leftHeld = false;
-    if (e.code === "ArrowRight" || e.code === "KeyD") rightHeld = false;
     if (e.code === "ArrowUp" || e.code === "KeyW" || e.code === "ShiftLeft" || e.code === "ShiftRight") {
       boostHeld = false;
     }
@@ -330,10 +329,9 @@ export function createCarDodgeGame({ canvas, ctx }) {
   function reset() {
     saveData = loadSaveData();
     playerCar = carById(saveData.selectedCarId);
-    playerX = roadLeft() + roadWidth() / 2;
+    playerLane = 1;
+    playerX = laneCenterX(playerLane);
     playerY = canvas.height * PLAYER_Y_RATIO;
-    leftHeld = false;
-    rightHeld = false;
     boostHeld = false;
     cars = [];
     trees = [];
@@ -385,12 +383,10 @@ export function createCarDodgeGame({ canvas, ctx }) {
     const speed = currentSpeed();
     score += speed * dtSec * 0.05;
 
-    if (leftHeld) playerX -= PLAYER_MOVE_SPEED * dtSec;
-    if (rightHeld) playerX += PLAYER_MOVE_SPEED * dtSec;
-    const { w: playerW } = carDrawSize(playerCar);
-    const minX = roadLeft() + playerW / 2;
-    const maxX = roadLeft() + roadWidth() - playerW / 2;
-    playerX = Math.max(minX, Math.min(maxX, playerX));
+    const targetX = laneCenterX(playerLane);
+    const maxStep = LANE_CHANGE_SPEED * dtSec;
+    const dx = targetX - playerX;
+    playerX += Math.max(-maxStep, Math.min(maxStep, dx));
 
     for (const car of cars) car.y += speed * dtSec;
     cars = cars.filter((c) => c.y - CAR_HEIGHT < canvas.height + 40);
@@ -621,7 +617,7 @@ export function createCarDodgeGame({ canvas, ctx }) {
     id: "highway-dodge",
     title: "Highway Dodge",
     thumbnail: null,
-    description: "Weave through traffic at full speed. Arrow keys or A/D to steer freely across the road, hold Up/W to boost. Collect coins, dodge close calls, and buy new cars for the garage.",
+    description: "Weave through traffic at full speed. Arrow keys or A/D to switch lanes, hold Up/W to boost. Collect coins, dodge close calls, and buy new cars for the garage.",
     reset,
     update,
     draw,
