@@ -24,15 +24,23 @@ create table public.game_sessions (
 alter table public.game_sessions enable row level security;
 
 -- Same trust model as arena_rooms elsewhere in this project: client-side hobby
--- analytics, open to signed-in users and guests alike. No SELECT policy is
--- defined on purpose — the app never reads this table back, so the public key
--- can write to it but not read it. You can still see everything yourself in the
--- Table Editor / SQL Editor, since dashboard access isn't subject to these
--- policies.
+-- analytics, open to signed-in users and guests alike.
+--
+-- A SELECT policy is required even though the app's own UI never displays this
+-- data: main.js does `.insert({...}).select("id").single()` so it can capture
+-- the new row's id and fill in ended_at/duration_seconds later. That `.select()`
+-- asks Postgres to RETURN the just-inserted row, and RETURNING is filtered by
+-- the SELECT policy same as a real read — with none defined, RLS blocks the
+-- whole insert (not just the returned data), which silently broke session
+-- logging entirely until this policy was added.
 create policy "Anyone can log a session starting"
   on public.game_sessions for insert
   with check (true);
 
 create policy "Anyone can log a session ending"
   on public.game_sessions for update
+  using (true);
+
+create policy "Anyone can view sessions"
+  on public.game_sessions for select
   using (true);
