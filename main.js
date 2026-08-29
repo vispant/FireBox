@@ -15,7 +15,7 @@ import { createBrickGame } from "./brickGame.js?v=5";
 import { createRunnerGame } from "./runnerGame.js?v=2";
 import { createHopperGame } from "./hopperGame.js?v=7";
 import { createBombArenaGame } from "./bombArenaGame.js?v=7";
-import { createCarDodgeGame } from "./carDodgeGame.js?v=5";
+import { createCarDodgeGame } from "./carDodgeGame.js?v=7";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -542,6 +542,7 @@ function renderGameOver(result) {
     <h1>${result.title}</h1>
     <p>${result.message}</p>
     <button data-action="retry">Play Again</button>
+    ${activeGame.renderShop ? `<button class="secondary" data-action="shop">🚗 Garage</button>` : ""}
     <button class="secondary" data-action="quit">Back to Menu</button>
   `;
 }
@@ -722,6 +723,10 @@ overlay.addEventListener("click", (e) => {
     backToGameList();
   } else if (action === "retry") {
     startGame(activeGame.id);
+  } else if (action === "shop") {
+    activeGame.renderShop(overlay, {
+      onClose: () => renderGameOver(activeGame.getOverResult()),
+    });
   } else if (action === "upgrade") {
     if (activeGame.applyUpgrade(btn.dataset.upgradeId)) {
       renderPauseMenu();
