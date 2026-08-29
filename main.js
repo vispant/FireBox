@@ -15,6 +15,7 @@ import { createBrickGame } from "./brickGame.js?v=5";
 import { createRunnerGame } from "./runnerGame.js?v=2";
 import { createHopperGame } from "./hopperGame.js?v=7";
 import { createBombArenaGame } from "./bombArenaGame.js?v=7";
+import { createCarDodgeGame } from "./carDodgeGame.js?v=5";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -107,6 +108,7 @@ const normalGames = [
   createRunnerGame({ canvas, ctx }),
   createHopperGame({ canvas, ctx }),
   createBombArenaGame({ canvas, ctx, getPlayerName }),
+  createCarDodgeGame({ canvas, ctx }),
 ];
 
 // Picks a canvas/camera resolution matching this device's actual viewport shape
