@@ -8,7 +8,6 @@ import { createPersonSegmenter } from "./segmentation.js?v=3";
 import { signUp, signIn, signOut, getCurrentUser, fetchCountry, supabase } from "./auth.js?v=1";
 import { TURNSTILE_SITE_KEY } from "./config.js?v=1";
 import { createFlappyGame } from "./flappyGame.js?v=4";
-import { createSnakeGame } from "./snakeGame.js?v=3";
 import { createWhackGame } from "./whackGame.js?v=2";
 import { createSnakeArenaGame } from "./snakeArenaGame.js?v=12";
 import { createBrickGame } from "./brickGame.js?v=5";
@@ -101,7 +100,6 @@ function getPlayerName() {
 
 const normalGames = [
   createFlappyGame({ canvas, ctx }),
-  createSnakeGame({ canvas, ctx }),
   createWhackGame({ canvas, ctx }),
   createSnakeArenaGame({ canvas, ctx, getPlayerName }),
   createBrickGame({ canvas, ctx }),
