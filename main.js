@@ -6,7 +6,7 @@ import { createCatchGame } from "./catchGame.js?v=11";
 import { createFighterGame } from "./fighterGame.js?v=12";
 import { createPersonSegmenter } from "./segmentation.js?v=3";
 import { signUp, signIn, signOut, getCurrentUser, fetchCountry, supabase } from "./auth.js?v=1";
-import { TURNSTILE_SITE_KEY } from "./config.js?v=1";
+import { TURNSTILE_SITE_KEY, SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=1";
 import { createFlappyGame } from "./flappyGame.js?v=4";
 import { createWhackGame } from "./whackGame.js?v=3";
 import { createSnakeArenaGame } from "./snakeArenaGame.js?v=12";
@@ -601,6 +601,36 @@ async function endGameSession() {
     console.warn("Could not record game session end.", err);
   }
 }
+
+// Covers the one real gap in session tracking: a player closing the tab,
+// hitting refresh, or navigating away mid-game never runs the normal
+// quit flow, so endGameSession() above never fires and the row is stuck
+// with a null ended_at/duration_seconds forever. A regular fetch (or the
+// supabase-js client, which uses one) can get cancelled the instant the
+// page starts unloading — `keepalive: true` is the browser-native way to
+// let a request survive that, so this is a plain fetch straight to the
+// REST endpoint rather than going through the supabase-js client.
+function endGameSessionOnUnload() {
+  if (!sessionRowId) return;
+  const durationSeconds = Math.round((Date.now() - sessionStartedAt) / 1000);
+  const url = `${SUPABASE_URL}/rest/v1/game_sessions?id=eq.${sessionRowId}`;
+  try {
+    fetch(url, {
+      method: "PATCH",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({ ended_at: new Date().toISOString(), duration_seconds: durationSeconds }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+  sessionRowId = null;
+  sessionStartedAt = null;
+}
+window.addEventListener("pagehide", endGameSessionOnUnload);
 
 function enterPlaying() {
   beginGameSession(activeGame.id);
