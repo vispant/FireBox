@@ -642,19 +642,22 @@ function showMenu() {
   renderMenu();
 }
 
+let normalGamesOrder = normalGames.slice();
+let topPlayedGameId = null;
+
 function renderNormalMenu() {
   overlay.innerHTML = `
     <h1>Normal Games</h1>
     <button class="auth-toggle" type="button" data-action="back-to-hub">← Back</button>
     <p>No camera needed — just your keyboard or mouse.</p>
     <div class="game-grid">
-      ${normalGames
+      ${normalGamesOrder
         .map(
           (g) => `
         <button class="game-card" data-action="select-game" data-game-id="${g.id}">
           ${g.thumbnail ? `<img class="card-thumb" src="${g.thumbnail}" alt="" />` : ""}
           <div class="card-body">
-            <strong>${g.title}</strong>
+            <strong>${g.title}</strong>${g.id === topPlayedGameId ? ` <span class="badge-hot">🔥 Most Played</span>` : ""}
             <span>${g.description}</span>
           </div>
         </button>`
@@ -662,6 +665,33 @@ function renderNormalMenu() {
         .join("")}
     </div>
   `;
+}
+
+// Ranks the Normal Games list by total play count (game_sessions rows per
+// game_id) so the most-played games surface first, same as any storefront's
+// "Popular" sort — matches this app's soft-fail convention for analytics
+// (see beginGameSession): if the query fails, the list just keeps its
+// existing order rather than showing an error.
+async function refreshNormalGamesRanking() {
+  try {
+    const counts = await Promise.all(
+      normalGames.map(async (g) => {
+        const { count } = await supabase
+          .from("game_sessions")
+          .select("*", { count: "exact", head: true })
+          .eq("game_id", g.id);
+        return count || 0;
+      })
+    );
+    const ranked = normalGames
+      .map((g, i) => ({ g, i, count: counts[i] }))
+      .sort((a, b) => b.count - a.count || a.i - b.i);
+    normalGamesOrder = ranked.map((r) => r.g);
+    topPlayedGameId = ranked[0] && ranked[0].count > 0 ? ranked[0].g.id : null;
+    if (screen === "normalMenu") renderNormalMenu();
+  } catch (err) {
+    console.warn("Could not load game popularity ranking.", err);
+  }
 }
 
 function showNormalMenu() {
@@ -673,6 +703,7 @@ function showNormalMenu() {
   threeCanvas.classList.add("hidden");
   fxCanvas.classList.add("hidden");
   renderNormalMenu();
+  refreshNormalGamesRanking();
 }
 
 function backToGameList() {

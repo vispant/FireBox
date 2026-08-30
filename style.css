@@ -259,6 +259,18 @@ canvas {
   line-height: 1.4;
 }
 
+#overlay .game-card span.badge-hot {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 999px;
+  padding: 2px 8px;
+  line-height: 1.6;
+}
+
 .upgrade-list {
   display: flex;
   flex-direction: column;
