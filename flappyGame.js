@@ -281,7 +281,7 @@ export function createFlappyGame({ canvas, ctx }) {
   return {
     id: "flappy",
     title: "Sky Dodger",
-    thumbnail: null,
+    thumbnail: "Asset/sky_dodger_Thumbnail.jpg",
     description: "Tap space or click to fly through the gaps. How far can you go?",
     reset,
     update,
