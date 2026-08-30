@@ -562,7 +562,7 @@ export function createCarDodgeGame({ canvas, ctx }) {
   return {
     id: "highway-dodge",
     title: "Highway Dodge",
-    thumbnail: null,
+    thumbnail: "Asset/highway_dodger_Thumbnail.jpg",
     description: "Weave through traffic at full speed. Arrow keys or A/D to switch lanes, hold Up/W to boost. Collect coins, dodge close calls, and buy new cars for the garage.",
     reset,
     update,
