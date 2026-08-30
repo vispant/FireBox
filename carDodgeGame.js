@@ -33,33 +33,27 @@ const TREE_SRCS = [
 ];
 const COIN_SRC = "Asset/kenney_jumper-pack/PNG/HUD/coin_gold.png";
 
-// Ten cars — each a distinct silhouette (via `style`) and color, not just a recolor.
+// Ten cars — real top-down sprites from the Kenney Racing Pack (5 colors x 2
+// sizes x 5 shape variants gives plenty of genuinely distinct combinations).
+// hitboxScale lets a couple of cars (Titan, Hauler) feel appropriately bulky
+// to actually dodge around, matching their names.
 const CAR_CATALOG = [
-  { id: "cruiser", name: "Cruiser", price: 0, style: "sedan", color: "#ef4444" },
-  { id: "bolt", name: "Bolt", price: 120, style: "sport", color: "#fb923c" },
-  { id: "titan", name: "Titan", price: 180, style: "suv", color: "#3b82f6" },
-  { id: "peanut", name: "Peanut", price: 90, style: "compact", color: "#4ade80" },
-  { id: "reaper", name: "Reaper", price: 260, style: "muscle", color: "#1e293b", accent: "#ef4444" },
-  { id: "cab", name: "Cab", price: 140, style: "taxi", color: "#facc15" },
-  { id: "justice", name: "Justice", price: 220, style: "police", color: "#f8fafc" },
-  { id: "breeze", name: "Breeze", price: 200, style: "convertible", color: "#a78bfa", accent: "#fef9c3" },
-  { id: "hauler", name: "Hauler", price: 160, style: "van", color: "#e2e8f0" },
-  { id: "vortex", name: "Vortex", price: 320, style: "race", color: "#94a3b8", accent: "#ef4444" },
+  { id: "cruiser", name: "Cruiser", price: 0, color: "red", size: "normal", shape: 1, hitboxScale: 1.0 },
+  { id: "bolt", name: "Bolt", price: 120, color: "yellow", size: "small", shape: 2, hitboxScale: 0.8 },
+  { id: "titan", name: "Titan", price: 180, color: "blue", size: "normal", shape: 3, hitboxScale: 1.18 },
+  { id: "peanut", name: "Peanut", price: 90, color: "green", size: "small", shape: 1, hitboxScale: 0.78 },
+  { id: "reaper", name: "Reaper", price: 260, color: "black", size: "normal", shape: 5, hitboxScale: 1.02 },
+  { id: "cab", name: "Cab", price: 140, color: "yellow", size: "normal", shape: 1, hitboxScale: 1.0 },
+  { id: "justice", name: "Justice", price: 220, color: "blue", size: "small", shape: 5, hitboxScale: 0.85 },
+  { id: "breeze", name: "Breeze", price: 200, color: "green", size: "normal", shape: 4, hitboxScale: 0.96 },
+  { id: "hauler", name: "Hauler", price: 160, color: "black", size: "normal", shape: 3, hitboxScale: 1.2 },
+  { id: "vortex", name: "Vortex", price: 320, color: "red", size: "small", shape: 2, hitboxScale: 0.88 },
 ];
 
-const STYLE_SCALE = {
-  sedan: { w: 1, h: 1 },
-  sport: { w: 0.92, h: 0.86 },
-  suv: { w: 1.16, h: 1.08 },
-  compact: { w: 0.8, h: 0.82 },
-  muscle: { w: 1.0, h: 1.12 },
-  taxi: { w: 1.0, h: 1.0 },
-  police: { w: 1.02, h: 1.02 },
-  convertible: { w: 0.98, h: 0.94 },
-  van: { w: 1.18, h: 1.2 },
-  race: { w: 0.9, h: 1.05 },
-};
-const BOXY_STYLES = new Set(["suv", "van"]);
+function carSpriteSrc(car) {
+  const sizePart = car.size === "small" ? "_small" : "";
+  return `Asset/highway_dodger/PNG/Cars/car_${car.color}${sizePart}_${car.shape}.png`;
+}
 
 function loadSprite(src) {
   const sprite = { img: new Image(), loaded: false };
@@ -110,89 +104,41 @@ function carById(id) {
   return CAR_CATALOG.find((c) => c.id === id) || CAR_CATALOG[0];
 }
 
-function carDrawSize(car) {
-  const scale = STYLE_SCALE[car.style] || STYLE_SCALE.sedan;
-  return { w: CAR_WIDTH * scale.w, h: CAR_HEIGHT * scale.h };
-}
-
-function drawCarStyled(ctx, x, y, car) {
-  const { w, h } = carDrawSize(car);
-  const boxy = BOXY_STYLES.has(car.style);
-  ctx.save();
-  ctx.translate(x, y);
-
-  ctx.fillStyle = "rgba(0,0,0,0.25)";
-  ctx.beginPath();
-  ctx.ellipse(0, h * 0.42, w * 0.55, h * 0.14, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = car.color;
-  ctx.beginPath();
-  if (boxy) {
-    ctx.rect(-w / 2, -h / 2, w, h);
-  } else {
-    ctx.moveTo(-w / 2, -h * 0.32);
-    ctx.quadraticCurveTo(-w / 2, -h / 2, 0, -h / 2);
-    ctx.quadraticCurveTo(w / 2, -h / 2, w / 2, -h * 0.32);
-    ctx.lineTo(w / 2, h * 0.38);
-    ctx.quadraticCurveTo(w / 2, h / 2, 0, h / 2);
-    ctx.quadraticCurveTo(-w / 2, h / 2, -w / 2, h * 0.38);
-  }
-  ctx.closePath();
-  ctx.fill();
-
-  if (car.style === "convertible") {
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(-w * 0.34, -h * 0.34, w * 0.68, h * 0.24);
-    ctx.fillStyle = car.accent || "#fef9c3";
-    [-1, 1].forEach((s) => {
-      ctx.beginPath();
-      ctx.ellipse(w * 0.16 * s, h * 0.08, w * 0.13, h * 0.11, 0, 0, Math.PI * 2);
-      ctx.fill();
-    });
-  } else {
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(-w * 0.34, -h * 0.34, w * 0.68, h * 0.24);
-    ctx.fillRect(-w * 0.34, h * 0.02, w * 0.68, h * 0.2);
-  }
-
-  ctx.fillStyle = "#fef9c3";
-  ctx.fillRect(-w * 0.4, -h * 0.5, w * 0.16, h * 0.06);
-  ctx.fillRect(w * 0.24, -h * 0.5, w * 0.16, h * 0.06);
-  ctx.fillStyle = "#7f1d1d";
-  ctx.fillRect(-w * 0.4, h * 0.44, w * 0.16, h * 0.06);
-  ctx.fillRect(w * 0.24, h * 0.44, w * 0.16, h * 0.06);
-
-  if (car.style === "muscle" || car.style === "race") {
-    ctx.fillStyle = car.accent || "#ef4444";
-    ctx.fillRect(-w * 0.08, -h * 0.48, w * 0.16, h * 0.96);
-  }
-  if (car.style === "race") {
-    ctx.fillStyle = car.color;
-    ctx.strokeStyle = "#0f172a";
-    ctx.lineWidth = 2;
-    ctx.fillRect(-w * 0.34, -h * 0.58, w * 0.68, h * 0.08);
-    ctx.strokeRect(-w * 0.34, -h * 0.58, w * 0.68, h * 0.08);
-  }
-  if (car.style === "taxi") {
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(-w * 0.45, -h * 0.02, w * 0.2, h * 0.06);
-    ctx.fillRect(-w * 0.05, -h * 0.02, w * 0.2, h * 0.06);
-    ctx.fillRect(w * 0.25, -h * 0.02, w * 0.2, h * 0.06);
-    ctx.fillRect(-w * 0.16, -h * 0.6, w * 0.32, h * 0.09);
-  }
-  if (car.style === "police") {
-    ctx.fillStyle = "#ef4444";
-    ctx.fillRect(-w * 0.16, -h * 0.6, w * 0.16, h * 0.09);
-    ctx.fillStyle = "#3b82f6";
-    ctx.fillRect(0, -h * 0.6, w * 0.16, h * 0.09);
-  }
-
-  ctx.restore();
-  return { w, h };
-}
-
 export function createCarDodgeGame({ canvas, ctx }) {
+  const carSprites = {};
+  for (const car of CAR_CATALOG) carSprites[car.id] = loadSprite(carSpriteSrc(car));
+
+  function carDrawSize(car) {
+    const sprite = carSprites[car.id];
+    const targetW = CAR_WIDTH * car.hitboxScale;
+    let aspect = car.size === "small" ? 1.65 : 1.85; // fallback before the sprite loads
+    if (sprite && sprite.loaded && sprite.img.naturalWidth) {
+      aspect = sprite.img.naturalHeight / sprite.img.naturalWidth;
+    }
+    return { w: targetW, h: targetW * aspect };
+  }
+
+  function drawCarSprite(targetCtx, x, y, car) {
+    const sprite = carSprites[car.id];
+    const { w, h } = carDrawSize(car);
+    targetCtx.save();
+    targetCtx.translate(x, y);
+    targetCtx.fillStyle = "rgba(0,0,0,0.25)";
+    targetCtx.beginPath();
+    targetCtx.ellipse(0, h * 0.42, w * 0.55, h * 0.14, 0, 0, Math.PI * 2);
+    targetCtx.fill();
+    if (sprite.loaded) {
+      targetCtx.drawImage(sprite.img, -w / 2, -h / 2, w, h);
+    } else {
+      targetCtx.fillStyle = "#94a3b8";
+      targetCtx.beginPath();
+      targetCtx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+      targetCtx.fill();
+    }
+    targetCtx.restore();
+    return { w, h };
+  }
+
   const treeSprites = TREE_SRCS.map(loadSprite);
   const coinSprite = loadSprite(COIN_SRC);
 
@@ -505,8 +451,8 @@ export function createCarDodgeGame({ canvas, ctx }) {
       }
     }
 
-    for (const car of cars) drawCarStyled(ctx, car.x, car.y, car.def);
-    drawCarStyled(ctx, playerX, playerY, playerCar);
+    for (const car of cars) drawCarSprite(ctx, car.x, car.y, car.def);
+    drawCarSprite(ctx, playerX, playerY, playerCar);
 
     ctx.textAlign = "center";
     ctx.font = "bold 22px system-ui, sans-serif";
@@ -581,7 +527,7 @@ export function createCarDodgeGame({ canvas, ctx }) {
         const { h } = carDrawSize(car);
         const previewScale = 78 / h;
         pctx.scale(previewScale, previewScale);
-        drawCarStyled(pctx, 0, 0, car);
+        drawCarSprite(pctx, 0, 0, car);
         pctx.restore();
       });
 
