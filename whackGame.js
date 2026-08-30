@@ -233,7 +233,7 @@ export function createWhackGame({ canvas, ctx }) {
   return {
     id: "whack",
     title: "Whack-a-Mole",
-    thumbnail: null,
+    thumbnail: "Asset/whack_a_mole_Thumbnail.jpg",
     description: "Click the moles before they duck back down. 30 seconds on the clock, coins for every hit.",
     reset,
     update,
