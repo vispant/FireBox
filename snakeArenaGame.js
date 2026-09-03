@@ -32,6 +32,7 @@ const ROOM_HEARTBEAT_INTERVAL = 6000; // ms
 
 const TARGET_BOT_COUNT = 19; // + the player = 20 snakes in the arena
 const BOT_RESPAWN_DELAY = 4; // seconds
+const SPAWN_GRACE_SECONDS = 1.5; // brief invulnerability after (re)spawning, since bots/opponents can already be sitting on the spawn point
 const BOT_SENSE_RADIUS = 400;
 const BOT_NAMES = [
   "Wiggly", "Zippy", "Muncher", "Blitz", "Scales", "Turbo", "Slinky", "Rex", "Noodle", "Fang",
@@ -122,6 +123,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   let botRespawnTimer = 0;
   let botNameIndex = 0;
   let botCounter = 0;
+  let spawnGraceTimer = 0;
 
   window.addEventListener("keydown", (e) => {
     if (!isPlaying) return;
@@ -309,7 +311,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     camera.x = mySnake.head.x;
     camera.y = mySnake.head.y;
 
-    const hit = checkSnakeCollisions(mySnake, opponents, null);
+    const hit = spawnGraceTimer > 0 ? null : checkSnakeCollisions(mySnake, opponents, null);
     if (hit) {
       if (hit.type === "wall") die(null, "You hit the wall!");
       else if (hit.type === "head") die(null, `Collided head-on with ${hit.other.name}!`);
@@ -512,7 +514,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
       if (bot.alive) tryEatFoodOffline(bot);
     }
 
-    const playerHit = checkSnakeCollisions(mySnake, bots, null);
+    const playerHit = spawnGraceTimer > 0 ? null : checkSnakeCollisions(mySnake, bots, null);
     if (playerHit) {
       if (playerHit.type === "wall") die(null, "You hit the wall!");
       else if (playerHit.type === "head") die(null, `Collided head-on with ${playerHit.other.name}!`);
@@ -547,6 +549,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   function update(dt) {
     if (!isPlaying || !mySnake || !mySnake.alive) return;
     const dtSec = Math.min(dt, 50) / 1000;
+    if (spawnGraceTimer > 0) spawnGraceTimer = Math.max(0, spawnGraceTimer - dtSec);
     if (mode === "offline") {
       updateOfflineTick(dtSec);
     } else {
@@ -839,7 +842,14 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     }
 
     if (mySnake.alive) {
-      drawSnakeBody(mySnake.segments, colorForId(myId), true, mySnake.heading, myId);
+      if (spawnGraceTimer > 0) {
+        ctx.save();
+        ctx.globalAlpha = 0.55 + 0.35 * Math.sin(performance.now() / 80);
+        drawSnakeBody(mySnake.segments, colorForId(myId), true, mySnake.heading, myId);
+        ctx.restore();
+      } else {
+        drawSnakeBody(mySnake.segments, colorForId(myId), true, mySnake.heading, myId);
+      }
     }
 
     ctx.restore();
@@ -898,6 +908,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     dead = false;
     deathReason = "";
     isPlaying = true;
+    spawnGraceTimer = SPAWN_GRACE_SECONDS;
 
     orbs = new Map();
     for (let i = 0; i < TARGET_FOOD_COUNT; i++) spawnOrb();
