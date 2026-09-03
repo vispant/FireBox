@@ -502,7 +502,7 @@ export function createRunnerGame({ canvas, ctx }) {
   return {
     id: "runner",
     title: "Endless Runner",
-    thumbnail: null,
+    thumbnail: "Asset/endless_runner_Thumbnail.jpg",
     description: "Jump and duck with arrow keys. Collect coins to buy upgrades — an extra life or a slower start.",
     reset,
     update,
