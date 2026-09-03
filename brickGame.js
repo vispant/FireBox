@@ -314,7 +314,7 @@ export function createBrickGame({ canvas, ctx }) {
   return {
     id: "brick",
     title: "Brick Breaker",
-    thumbnail: null,
+    thumbnail: "Asset/brick_breaker_Thumbnail.jpg",
     description: "Move the paddle with your mouse and break every brick. Clear a level for a faster, tougher one.",
     reset,
     update,
