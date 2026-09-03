@@ -9,10 +9,10 @@ import { signUp, signIn, signOut, getCurrentUser, fetchCountry, supabase } from 
 import { TURNSTILE_SITE_KEY, SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=1";
 import { createFlappyGame } from "./flappyGame.js?v=4";
 import { createWhackGame } from "./whackGame.js?v=3";
-import { createSnakeArenaGame } from "./snakeArenaGame.js?v=12";
-import { createBrickGame } from "./brickGame.js?v=5";
-import { createRunnerGame } from "./runnerGame.js?v=2";
-import { createHopperGame } from "./hopperGame.js?v=7";
+import { createSnakeArenaGame } from "./snakeArenaGame.js?v=13";
+import { createBrickGame } from "./brickGame.js?v=6";
+import { createRunnerGame } from "./runnerGame.js?v=3";
+import { createHopperGame } from "./hopperGame.js?v=8";
 import { createBombArenaGame } from "./bombArenaGame.js?v=7";
 import { createCarDodgeGame } from "./carDodgeGame.js?v=17";
 
