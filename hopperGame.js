@@ -475,7 +475,7 @@ export function createHopperGame({ canvas, ctx }) {
   return {
     id: "hopper",
     title: "Sky Hopper",
-    thumbnail: null,
+    thumbnail: "Asset/sky_hopper_Thumbnail.jpg",
     description: "Bounce as high as you can! Steer left and right to land on platforms — don't look down.",
     reset,
     update,
