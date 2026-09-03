@@ -1117,7 +1117,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   return {
     id: "snake-arena",
     title: "Snake Arena",
-    thumbnail: null,
+    thumbnail: "Asset/snake_arena_Thumbnail.jpg",
     description: "Multiplayer Snake — play live with friends online, or practice offline against bots. Eat orbs, eat opponents, avoid the wall.",
     needsLobby: true,
     renderLobby,
