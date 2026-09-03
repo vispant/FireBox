@@ -11,7 +11,8 @@ import {
 } from "./multiplayer.js?v=3";
 import { hudClearance } from "./utils.js?v=5";
 
-const ARENA_RADIUS = 1500;
+const ARENA_RADIUS = 1500; // online multiplayer arena — unchanged, other players' sessions depend on it
+const ARENA_RADIUS_OFFLINE = 6000; // offline/bots practice mode gets a much bigger map
 const SPEED = 180; // px/s
 const MAX_TURN_RATE = 4.0; // rad/s, mouse steering
 const KEY_TURN_RATE = 4.0; // rad/s, keyboard steering
@@ -30,7 +31,7 @@ const HOST_LEFT_NOTICE_MS = 5000;
 const ONLINE_ARENA_CAPACITY = 8;
 const ROOM_HEARTBEAT_INTERVAL = 6000; // ms
 
-const TARGET_BOT_COUNT = 19; // + the player = 20 snakes in the arena
+const TARGET_BOT_COUNT = 100; // + the player = 101 snakes in the offline arena
 const BOT_RESPAWN_DELAY = 4; // seconds
 const SPAWN_GRACE_SECONDS = 1.5; // brief invulnerability after (re)spawning, since bots/opponents can already be sitting on the spawn point
 const BOT_SENSE_RADIUS = 400;
@@ -61,9 +62,9 @@ function colorForId(id) {
   return SNAKE_COLORS[hashString(id) % SNAKE_COLORS.length];
 }
 
-function startPositionForId(id) {
+function startPositionForId(id, arenaRadius) {
   const angle = (hashString(`${id}-pos`) % 360) * (Math.PI / 180);
-  const radius = ARENA_RADIUS * 0.35;
+  const radius = arenaRadius * 0.35;
   return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, angle };
 }
 
@@ -80,8 +81,18 @@ function turnToward(current, target, maxDelta) {
   return current + clamped;
 }
 
-function randPointInArena() {
-  const r = Math.sqrt(Math.random()) * ARENA_RADIUS * 0.9;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // ~137.5°: successive multiples spread evenly around a circle with no clustering, unlike hashing many bots onto random angles
+
+// Bots use a sequential index (not a hash) for their ring position so 100 of them
+// never land close enough together to instantly wipe each other out on spawn.
+function botStartPosition(sequenceIndex, arenaRadius) {
+  const angle = sequenceIndex * GOLDEN_ANGLE;
+  const radius = arenaRadius * 0.35;
+  return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, angle };
+}
+
+function randPointInArena(arenaRadius) {
+  const r = Math.sqrt(Math.random()) * arenaRadius * 0.9;
   const a = Math.random() * Math.PI * 2;
   return { x: Math.cos(a) * r, y: Math.sin(a) * r };
 }
@@ -124,6 +135,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   let botNameIndex = 0;
   let botCounter = 0;
   let spawnGraceTimer = 0;
+  let arenaRadius = ARENA_RADIUS;
 
   window.addEventListener("keydown", (e) => {
     if (!isPlaying) return;
@@ -161,7 +173,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   }
 
   function spawnOrb() {
-    const p = randPointInArena();
+    const p = randPointInArena(arenaRadius);
     orbs.set(makeOrbId(), { x: p.x, y: p.y });
   }
 
@@ -262,9 +274,14 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     }
   }
 
+  // A body chain can never reach farther from its own head than its total logical length —
+  // lets us skip the per-segment loop entirely for snakes that are obviously too far away,
+  // which matters once there are 100 bots' worth of segments to check every frame.
+  const MAX_BODY_REACH = MAX_BODY_SEGMENTS * SEGMENT_SPACING + COLLISION_RADIUS;
+
   // Generic collision test: does `snake`'s head touch anything in `others` (a Map, excluding excludeId)?
   function checkSnakeCollisions(snake, others, excludeId) {
-    if (Math.hypot(snake.head.x, snake.head.y) > ARENA_RADIUS) {
+    if (Math.hypot(snake.head.x, snake.head.y) > arenaRadius) {
       return { type: "wall" };
     }
     for (const [id, other] of others) {
@@ -275,6 +292,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     }
     for (const [id, other] of others) {
       if (id === excludeId || other.alive === false || !other.segments) continue;
+      if (Math.hypot(snake.head.x - other.head.x, snake.head.y - other.head.y) > MAX_BODY_REACH) continue;
       for (const seg of other.segments) {
         if (Math.hypot(snake.head.x - seg.x, snake.head.y - seg.y) < COLLISION_RADIUS) {
           return { type: "body", otherId: id, other };
@@ -367,10 +385,11 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   // ---------------- Offline mode (bots) ----------------
 
   function spawnBot() {
-    const id = `bot-${botCounter++}-${Math.random().toString(36).slice(2, 6)}`;
+    const sequenceIndex = botCounter++;
+    const id = `bot-${sequenceIndex}-${Math.random().toString(36).slice(2, 6)}`;
     const name = botNameIndex < BOT_NAMES.length ? BOT_NAMES[botNameIndex] : `${BOT_NAMES[botNameIndex % BOT_NAMES.length]} ${Math.floor(botNameIndex / BOT_NAMES.length) + 1}`;
     botNameIndex++;
-    const pos = startPositionForId(id);
+    const pos = botStartPosition(sequenceIndex, arenaRadius);
     bots.set(id, {
       ownerId: id,
       name,
@@ -412,7 +431,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     // Wall proximity is a hard priority: return immediately so nothing below (food,
     // wander, obstacle-dodging) can fight it and drag the bot back toward the edge —
     // that tug-of-war was a second source of the "circling" bots kept getting stuck in.
-    if (Math.hypot(bot.head.x, bot.head.y) > ARENA_RADIUS * 0.82) {
+    if (Math.hypot(bot.head.x, bot.head.y) > arenaRadius * 0.82) {
       return Math.atan2(-bot.head.y, -bot.head.x);
     }
 
@@ -539,9 +558,11 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     }
     botRespawnTimer -= dtSec;
     if (botRespawnTimer <= 0 && bots.size < TARGET_BOT_COUNT) {
+      // Top all the way back up to TARGET_BOT_COUNT each tick — at 100 bots, ongoing
+      // bot-vs-bot combat kills them faster than a small throttled batch could replace,
+      // so a capped trickle would settle well below the target population instead of at it.
       const deficit = TARGET_BOT_COUNT - bots.size;
-      const spawnCount = deficit > 6 ? 3 : 1;
-      for (let i = 0; i < spawnCount; i++) spawnBot();
+      for (let i = 0; i < deficit; i++) spawnBot();
       botRespawnTimer = BOT_RESPAWN_DELAY;
     }
   }
@@ -824,7 +845,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     ctx.lineWidth = 6;
     ctx.setLineDash([16, 12]);
     ctx.beginPath();
-    ctx.arc(0, 0, ARENA_RADIUS, 0, Math.PI * 2);
+    ctx.arc(0, 0, arenaRadius, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
 
@@ -886,7 +907,8 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
   }
 
   function reset() {
-    const pos = startPositionForId(myId);
+    arenaRadius = mode === "offline" ? ARENA_RADIUS_OFFLINE : ARENA_RADIUS;
+    const pos = startPositionForId(myId, arenaRadius);
     mySnake = {
       head: { x: pos.x, y: pos.y },
       heading: pos.angle + Math.PI,
