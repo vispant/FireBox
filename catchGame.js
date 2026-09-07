@@ -1,6 +1,7 @@
 import { POSE, toCanvasCoords } from "./utils.js?v=5";
 
 const HAND_RADIUS = 26;
+const HAND_SPRITE_SRC = "Asset/hands.png";
 
 const AVATAR_SRC = {
   idle: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_idle.png",
@@ -28,9 +29,37 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// A drawn cartoon glove/mitt tracking each wrist, instead of a plain glowing
-// circle. Left/right get different colors purely so the two tracked hands
-// stay easy to tell apart at a glance.
+// The uploaded hand icon (Asset/hands.png) tracking each wrist. It's a single
+// forward-facing hand, so the right side is horizontally mirrored to get a
+// matching opposite hand instead of needing two separate images. A colored
+// glow behind it (not a recolor of the icon itself, which would muddy its
+// flat fill color) keeps left vs right easy to tell apart at a glance.
+function drawHandSprite(ctx, sprite, x, y, side) {
+  const baseColor = side === "left" ? "#60a5fa" : "#fb923c";
+  const size = HAND_RADIUS * 2.5;
+  const aspect = sprite.img.naturalHeight / sprite.img.naturalWidth;
+  const w = size;
+  const h = size * aspect;
+
+  ctx.save();
+  ctx.translate(x, y);
+  if (side === "right") ctx.scale(-1, 1);
+
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 0.85);
+  glow.addColorStop(0, hexToRgba(baseColor, 0.35));
+  glow.addColorStop(1, hexToRgba(baseColor, 0));
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.85, 0, Math.PI * 2);
+  ctx.fillStyle = glow;
+  ctx.fill();
+
+  ctx.drawImage(sprite.img, -w / 2, -h / 2, w, h);
+  ctx.restore();
+}
+
+// Drawn cartoon glove/mitt fallback, used only if the hand sprite hasn't
+// finished loading yet. Left/right get different colors so the two tracked
+// hands stay easy to tell apart at a glance.
 function drawHandGlove(ctx, x, y, side) {
   const baseColor = side === "left" ? "#60a5fa" : "#fb923c";
   const highlightColor = side === "left" ? "#dbeafe" : "#ffedd5";
@@ -87,6 +116,7 @@ function playSound(audio) {
 }
 
 export function createCatchGame({ canvas, ctx }) {
+  const handSprite = loadSprite(HAND_SPRITE_SRC);
   const avatarSprites = {
     idle: loadSprite(AVATAR_SRC.idle),
     cheer1: loadSprite(AVATAR_SRC.cheer1),
@@ -432,7 +462,8 @@ export function createCatchGame({ canvas, ctx }) {
     if (landmarks) {
       for (const [idx, side] of [[POSE.LEFT_WRIST, "left"], [POSE.RIGHT_WRIST, "right"]]) {
         const p = toCanvasCoords(landmarks[idx], canvas.width, canvas.height);
-        drawHandGlove(ctx, p.x, p.y, side);
+        if (handSprite.loaded) drawHandSprite(ctx, handSprite, p.x, p.y, side);
+        else drawHandGlove(ctx, p.x, p.y, side);
       }
     }
 
