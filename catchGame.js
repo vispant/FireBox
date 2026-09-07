@@ -1,6 +1,61 @@
 import { POSE, toCanvasCoords, drawFaceEmoji } from "./utils.js?v=5";
 
 const HAND_RADIUS = 26;
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// A drawn cartoon glove/mitt tracking each wrist, instead of a plain glowing
+// circle. Left/right get different colors purely so the two tracked hands
+// stay easy to tell apart at a glance.
+function drawHandGlove(ctx, x, y, side) {
+  const baseColor = side === "left" ? "#60a5fa" : "#fb923c";
+  const highlightColor = side === "left" ? "#dbeafe" : "#ffedd5";
+  const shadeColor = side === "left" ? "#1d4ed8" : "#c2410c";
+  const thumbSign = side === "left" ? -1 : 1;
+
+  ctx.save();
+  ctx.translate(x, y);
+
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, HAND_RADIUS * 1.8);
+  glow.addColorStop(0, hexToRgba(baseColor, 0.35));
+  glow.addColorStop(1, hexToRgba(baseColor, 0));
+  ctx.beginPath();
+  ctx.arc(0, 0, HAND_RADIUS * 1.8, 0, Math.PI * 2);
+  ctx.fillStyle = glow;
+  ctx.fill();
+
+  // thumb, drawn under the palm so the pair reads as a mitten silhouette
+  const thumbX = thumbSign * HAND_RADIUS * 0.75;
+  const thumbY = HAND_RADIUS * 0.15;
+  ctx.beginPath();
+  ctx.ellipse(thumbX, thumbY, HAND_RADIUS * 0.42, HAND_RADIUS * 0.3, thumbSign * 0.5, 0, Math.PI * 2);
+  ctx.fillStyle = shadeColor;
+  ctx.fill();
+
+  const palmGrad = ctx.createRadialGradient(-HAND_RADIUS * 0.3, -HAND_RADIUS * 0.35, HAND_RADIUS * 0.15, 0, 0, HAND_RADIUS);
+  palmGrad.addColorStop(0, highlightColor);
+  palmGrad.addColorStop(0.55, baseColor);
+  palmGrad.addColorStop(1, shadeColor);
+  ctx.beginPath();
+  ctx.arc(0, 0, HAND_RADIUS, 0, Math.PI * 2);
+  ctx.fillStyle = palmGrad;
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(255,255,255,0.8)";
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(-HAND_RADIUS * 0.32, -HAND_RADIUS * 0.32, HAND_RADIUS * 0.2, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.fill();
+
+  ctx.restore();
+}
 const CATCHES_PER_LEVEL = 5;
 
 function playSound(audio) {
@@ -221,19 +276,31 @@ export function createCatchGame({ canvas, ctx, video }) {
   }
 
   function drawOrb(obj) {
-    const grad = ctx.createRadialGradient(
-      obj.x - obj.r * 0.3,
-      obj.y - obj.r * 0.3,
-      obj.r * 0.1,
-      obj.x,
-      obj.y,
-      obj.r
-    );
+    ctx.save();
+    ctx.translate(obj.x, obj.y);
+
+    // string + knot, so this reads as an actual balloon instead of a plain ball
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, obj.r * 1.05);
+    ctx.quadraticCurveTo(obj.r * 0.4, obj.r * 1.5, 0, obj.r * 1.9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-obj.r * 0.12, obj.r * 0.92);
+    ctx.lineTo(obj.r * 0.12, obj.r * 0.92);
+    ctx.lineTo(0, obj.r * 1.12);
+    ctx.closePath();
+    ctx.fillStyle = "#15803d";
+    ctx.fill();
+
+    // body — slightly taller than wide, like a real balloon
+    const grad = ctx.createRadialGradient(-obj.r * 0.3, -obj.r * 0.35, obj.r * 0.1, 0, 0, obj.r);
     grad.addColorStop(0, "#dcfce7");
     grad.addColorStop(0.5, "#4ade80");
     grad.addColorStop(1, "#15803d");
     ctx.beginPath();
-    ctx.arc(obj.x, obj.y, obj.r, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, obj.r * 0.92, obj.r * 1.08, 0, 0, Math.PI * 2);
     ctx.fillStyle = grad;
     ctx.fill();
     ctx.strokeStyle = "rgba(255,255,255,0.8)";
@@ -241,40 +308,57 @@ export function createCatchGame({ canvas, ctx, video }) {
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(obj.x - obj.r * 0.35, obj.y - obj.r * 0.35, obj.r * 0.18, 0, Math.PI * 2);
+    ctx.ellipse(-obj.r * 0.32, -obj.r * 0.38, obj.r * 0.18, obj.r * 0.26, -0.4, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.fill();
+
+    ctx.restore();
   }
 
   function drawBomb(obj) {
+    ctx.save();
+    ctx.translate(obj.x, obj.y);
+
+    // fuse
     ctx.strokeStyle = "#78716c";
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(obj.x, obj.y - obj.r);
-    ctx.quadraticCurveTo(obj.x + obj.r * 0.3, obj.y - obj.r * 1.3, obj.x + obj.r * 0.15, obj.y - obj.r * 1.55);
+    ctx.moveTo(0, -obj.r);
+    ctx.quadraticCurveTo(obj.r * 0.3, -obj.r * 1.3, obj.r * 0.15, -obj.r * 1.55);
     ctx.stroke();
+
+    // glowing spark at the fuse tip
+    const sparkGlow = ctx.createRadialGradient(obj.r * 0.15, -obj.r * 1.55, 0, obj.r * 0.15, -obj.r * 1.55, 10);
+    sparkGlow.addColorStop(0, "rgba(253, 224, 71, 0.9)");
+    sparkGlow.addColorStop(1, "rgba(253, 224, 71, 0)");
     ctx.beginPath();
-    ctx.arc(obj.x + obj.r * 0.15, obj.y - obj.r * 1.55, 3, 0, Math.PI * 2);
-    ctx.fillStyle = "#fbbf24";
+    ctx.arc(obj.r * 0.15, -obj.r * 1.55, 10, 0, Math.PI * 2);
+    ctx.fillStyle = sparkGlow;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(obj.r * 0.15, -obj.r * 1.55, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#fde047";
     ctx.fill();
 
-    const grad = ctx.createRadialGradient(
-      obj.x - obj.r * 0.3,
-      obj.y - obj.r * 0.3,
-      obj.r * 0.1,
-      obj.x,
-      obj.y,
-      obj.r
-    );
-    grad.addColorStop(0, "#fca5a5");
-    grad.addColorStop(1, "#7f1d1d");
+    // dark bomb body with a red danger rim, instead of a plain red ball
+    const grad = ctx.createRadialGradient(-obj.r * 0.3, -obj.r * 0.3, obj.r * 0.1, 0, 0, obj.r);
+    grad.addColorStop(0, "#57534e");
+    grad.addColorStop(0.6, "#292524");
+    grad.addColorStop(1, "#0c0a09");
     ctx.beginPath();
-    ctx.arc(obj.x, obj.y, obj.r, 0, Math.PI * 2);
+    ctx.arc(0, 0, obj.r, 0, Math.PI * 2);
     ctx.fillStyle = grad;
     ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.6)";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 2.5;
     ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(-obj.r * 0.32, -obj.r * 0.32, obj.r * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fill();
+
+    ctx.restore();
   }
 
   function draw(landmarks) {
@@ -284,18 +368,9 @@ export function createCatchGame({ canvas, ctx, video }) {
     }
 
     if (landmarks) {
-      for (const idx of [POSE.LEFT_WRIST, POSE.RIGHT_WRIST]) {
+      for (const [idx, side] of [[POSE.LEFT_WRIST, "left"], [POSE.RIGHT_WRIST, "right"]]) {
         const p = toCanvasCoords(landmarks[idx], canvas.width, canvas.height);
-        const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, HAND_RADIUS);
-        glow.addColorStop(0, "rgba(191,219,254,0.55)");
-        glow.addColorStop(1, "rgba(96,165,250,0.15)");
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, HAND_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = glow;
-        ctx.fill();
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = "#60a5fa";
-        ctx.stroke();
+        drawHandGlove(ctx, p.x, p.y, side);
       }
     }
 
