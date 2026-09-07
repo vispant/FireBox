@@ -67,7 +67,7 @@ function playSound(audio) {
   }
 }
 
-export function createCatchGame({ canvas, ctx, video }) {
+export function createCatchGame({ canvas, ctx }) {
   const sfxPop = new Audio("balloon_pop.mp3");
   const sfxExplosion = new Audio("explosion_bomb.mp3");
   const sfxGameOver = new Audio("game_over.mp3");
@@ -242,10 +242,9 @@ export function createCatchGame({ canvas, ctx, video }) {
     ctx.restore();
   }
 
-  function drawBackground(bgVideo, personCutout) {
+  function drawBackground() {
     const w = canvas.width;
     const h = canvas.height;
-    const activeVideo = bgVideo || video;
 
     const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
     skyGrad.addColorStop(0, "#38bdf8");
@@ -257,16 +256,9 @@ export function createCatchGame({ canvas, ctx, video }) {
       drawCloud(c.x, c.y, c.scale);
     }
 
-    if (personCutout) {
-      ctx.drawImage(personCutout, 0, 0, w, h);
-    } else if (activeVideo && activeVideo.readyState >= 2) {
-      ctx.save();
-      ctx.globalAlpha = 0.85;
-      ctx.translate(w, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(activeVideo, 0, 0, w, h);
-      ctx.restore();
-    }
+    // No live camera feed / person cutout drawn here on purpose — the tracked
+    // gloves (see drawHandGlove) are meant to stand in for the player's hands
+    // instead of showing the player themselves.
 
     const spot = ctx.createRadialGradient(w / 2, h * 0.5, h * 0.6, w / 2, h * 0.5, h * 0.9);
     spot.addColorStop(0, "rgba(0,0,0,0)");
@@ -429,7 +421,6 @@ export function createCatchGame({ canvas, ctx, video }) {
     update,
     draw,
     drawBackground,
-    needsPersonCutout: true,
     primeAudio,
     isOver,
     getHud,
