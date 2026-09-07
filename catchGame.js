@@ -1,4 +1,4 @@
-import { POSE, toCanvasCoords, drawFaceEmoji } from "./utils.js?v=5";
+import { POSE, toCanvasCoords } from "./utils.js?v=5";
 
 const HAND_RADIUS = 26;
 
@@ -460,8 +460,6 @@ export function createCatchGame({ canvas, ctx }) {
     }
 
     ctx.restore();
-
-    drawFaceEmoji(ctx, landmarks, canvas.width, canvas.height);
   }
 
   function isOver() {
