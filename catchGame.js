@@ -2,15 +2,8 @@ import { POSE, toCanvasCoords } from "./utils.js?v=5";
 
 const HAND_RADIUS = 26;
 const HAND_SPRITE_SRC = "Asset/hands.png";
-
-const AVATAR_SRC = {
-  idle: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_idle.png",
-  cheer1: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_cheer1.png",
-  cheer2: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_cheer2.png",
-  hurt: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_hurt.png",
-};
-const AVATAR_CHEER_FRAME_MS = 220;
-const AVATAR_HURT_MS = 550;
+const VISIBILITY_MIN = 0.4; // ignore a tracked point if the model isn't confident it's in frame
+const COUNTDOWN_SECONDS = 3;
 
 function loadSprite(src) {
   const img = new Image();
@@ -117,12 +110,6 @@ function playSound(audio) {
 
 export function createCatchGame({ canvas, ctx }) {
   const handSprite = loadSprite(HAND_SPRITE_SRC);
-  const avatarSprites = {
-    idle: loadSprite(AVATAR_SRC.idle),
-    cheer1: loadSprite(AVATAR_SRC.cheer1),
-    cheer2: loadSprite(AVATAR_SRC.cheer2),
-    hurt: loadSprite(AVATAR_SRC.hurt),
-  };
 
   const sfxPop = new Audio("balloon_pop.mp3");
   const sfxExplosion = new Audio("explosion_bomb.mp3");
@@ -149,7 +136,7 @@ export function createCatchGame({ canvas, ctx }) {
   }
 
   let score, lives, level, objects, particles, floaters, spawnTimer, spawnInterval, shake, clouds;
-  let avatarCheerTimer, avatarCheerFrame, avatarHurtTimer;
+  let handsReady, countdown;
 
   function reset() {
     score = 0;
@@ -161,9 +148,8 @@ export function createCatchGame({ canvas, ctx }) {
     spawnTimer = 0;
     spawnInterval = 1100;
     shake = 0;
-    avatarCheerTimer = 0;
-    avatarCheerFrame = 0;
-    avatarHurtTimer = 0;
+    handsReady = false;
+    countdown = 0;
 
     clouds = [];
     for (let i = 0; i < 6; i++) {
@@ -213,7 +199,29 @@ export function createCatchGame({ canvas, ctx }) {
     floaters.push({ x, y, text, color, big, life: 40, maxLife: 40 });
   }
 
+  function handsVisible(landmarks) {
+    if (!landmarks) return false;
+    const isVisible = (l) => !!l && (l.visibility === undefined || l.visibility > VISIBILITY_MIN);
+    return isVisible(landmarks[POSE.LEFT_WRIST]) && isVisible(landmarks[POSE.RIGHT_WRIST]);
+  }
+
   function update(dt, landmarks) {
+    // Gate the very start of a round on actually seeing both hands, so the
+    // player isn't blindsided by balloons/bombs before they've even stepped
+    // into frame. Only checked once per round -- handsReady stays true for
+    // the rest of it even if a hand briefly leaves frame mid-game.
+    if (!handsReady) {
+      if (handsVisible(landmarks)) {
+        handsReady = true;
+        countdown = COUNTDOWN_SECONDS;
+      }
+      return;
+    }
+    if (countdown > 0) {
+      countdown = Math.max(0, countdown - Math.min(dt, 50) / 1000);
+      return;
+    }
+
     spawnTimer += dt;
     if (spawnTimer > spawnInterval) {
       spawnTimer = 0;
@@ -223,14 +231,6 @@ export function createCatchGame({ canvas, ctx }) {
     }
 
     shake = Math.max(0, shake - dt * 0.05);
-    avatarHurtTimer = Math.max(0, avatarHurtTimer - dt);
-    if (landmarks) {
-      avatarCheerTimer += dt;
-      if (avatarCheerTimer > AVATAR_CHEER_FRAME_MS) {
-        avatarCheerTimer = 0;
-        avatarCheerFrame = avatarCheerFrame === 0 ? 1 : 0;
-      }
-    }
 
     for (const c of clouds) {
       c.x += c.speed;
@@ -269,7 +269,6 @@ export function createCatchGame({ canvas, ctx }) {
             spawnBurst(obj.x, obj.y, "#ef4444");
             addFloater(obj.x, obj.y - 10, "-1 LIFE", "#ef4444");
             shake = Math.max(shake, 8);
-            avatarHurtTimer = AVATAR_HURT_MS;
             playSound(sfxExplosion);
             if (lives <= 0) playSound(sfxGameOver);
           }
@@ -422,42 +421,44 @@ export function createCatchGame({ canvas, ctx }) {
     ctx.restore();
   }
 
-  // A small mascot standing at the bottom of the screen, cheering while the
-  // player has hands tracked and wincing right after a bomb hit. Purely
-  // decorative — the actual catch/dodge hitboxes are the tracked gloves
-  // below, since those need to precisely follow each wrist independently.
-  function drawAvatar(landmarks) {
-    const pose = avatarHurtTimer > 0 ? "hurt" : landmarks ? (avatarCheerFrame === 0 ? "cheer1" : "cheer2") : "idle";
-    const sprite = avatarSprites[pose];
-    if (!sprite.loaded) return;
+  function drawHandsNeededOverlay() {
+    ctx.fillStyle = "rgba(15, 23, 42, 0.55)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const h = canvas.height * 0.34;
-    const w = h * (sprite.img.naturalWidth / sprite.img.naturalHeight);
-    const baseX = canvas.width / 2;
-    const baseY = canvas.height - 6;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = "bold 26px system-ui, sans-serif";
+    ctx.fillText("✋ Move back from the camera", canvas.width / 2, canvas.height / 2 - 16);
+    ctx.fillText("so both hands are visible", canvas.width / 2, canvas.height / 2 + 20);
 
-    let lean = 0;
-    if (landmarks) {
-      const leftP = toCanvasCoords(landmarks[POSE.LEFT_WRIST], canvas.width, canvas.height);
-      const rightP = toCanvasCoords(landmarks[POSE.RIGHT_WRIST], canvas.width, canvas.height);
-      const midX = (leftP.x + rightP.x) / 2;
-      lean = Math.max(-0.18, Math.min(0.18, ((midX - canvas.width / 2) / (canvas.width / 2)) * 0.18));
-    }
+    ctx.font = "16px system-ui, sans-serif";
+    ctx.fillStyle = "#cbd5e1";
+    ctx.fillText("The game starts automatically once we can see them", canvas.width / 2, canvas.height / 2 + 54);
+  }
 
-    ctx.save();
-    ctx.translate(baseX, baseY);
-    ctx.rotate(lean);
-    ctx.drawImage(sprite.img, -w / 2, -h, w, h);
-    ctx.restore();
+  function drawCountdownOverlay() {
+    ctx.fillStyle = "rgba(15, 23, 42, 0.35)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = "bold 120px system-ui, sans-serif";
+    ctx.fillText(String(Math.ceil(countdown)), canvas.width / 2, canvas.height / 2 + 40);
+
+    ctx.font = "bold 26px system-ui, sans-serif";
+    ctx.fillText("Get ready!", canvas.width / 2, canvas.height / 2 + 100);
   }
 
   function draw(landmarks) {
+    if (!handsReady) {
+      drawHandsNeededOverlay();
+      return;
+    }
+
     ctx.save();
     if (shake > 0.5) {
       ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
     }
-
-    drawAvatar(landmarks);
 
     if (landmarks) {
       for (const [idx, side] of [[POSE.LEFT_WRIST, "left"], [POSE.RIGHT_WRIST, "right"]]) {
@@ -491,6 +492,10 @@ export function createCatchGame({ canvas, ctx }) {
     }
 
     ctx.restore();
+
+    if (countdown > 0) {
+      drawCountdownOverlay();
+    }
   }
 
   function isOver() {
