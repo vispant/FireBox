@@ -4,6 +4,20 @@ const HAND_RADIUS = 26;
 const HAND_SPRITE_SRC = "Asset/hands.png";
 const VISIBILITY_MIN = 0.4; // ignore a tracked point if the model isn't confident it's in frame
 const COUNTDOWN_SECONDS = 3;
+const HAND_SENSITIVITY = 1.35; // amplifies hand movement around screen center, so a smaller physical reach covers the whole play area
+
+// Tracked hand position, amplified around the canvas center so the on-screen
+// hand moves faster than the real one for the same physical motion, then
+// clamped back on-canvas (amplifying can otherwise push it past the edge).
+function getHandPoint(landmarks, idx, canvasWidth, canvasHeight) {
+  const p = toCanvasCoords(landmarks[idx], canvasWidth, canvasHeight);
+  const cx = canvasWidth / 2;
+  const cy = canvasHeight / 2;
+  return {
+    x: Math.max(0, Math.min(canvasWidth, cx + (p.x - cx) * HAND_SENSITIVITY)),
+    y: Math.max(0, Math.min(canvasHeight, cy + (p.y - cy) * HAND_SENSITIVITY)),
+  };
+}
 
 function loadSprite(src) {
   const img = new Image();
@@ -239,8 +253,8 @@ export function createCatchGame({ canvas, ctx }) {
 
     const hands = [];
     if (landmarks) {
-      hands.push(toCanvasCoords(landmarks[POSE.LEFT_WRIST], canvas.width, canvas.height));
-      hands.push(toCanvasCoords(landmarks[POSE.RIGHT_WRIST], canvas.width, canvas.height));
+      hands.push(getHandPoint(landmarks, POSE.LEFT_WRIST, canvas.width, canvas.height));
+      hands.push(getHandPoint(landmarks, POSE.RIGHT_WRIST, canvas.width, canvas.height));
     }
 
     for (const obj of objects) {
@@ -462,7 +476,7 @@ export function createCatchGame({ canvas, ctx }) {
 
     if (landmarks) {
       for (const [idx, side] of [[POSE.LEFT_WRIST, "left"], [POSE.RIGHT_WRIST, "right"]]) {
-        const p = toCanvasCoords(landmarks[idx], canvas.width, canvas.height);
+        const p = getHandPoint(landmarks, idx, canvas.width, canvas.height);
         if (handSprite.loaded) drawHandSprite(ctx, handSprite, p.x, p.y, side);
         else drawHandGlove(ctx, p.x, p.y, side);
       }
