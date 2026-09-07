@@ -2,7 +2,7 @@ import {
   PoseLandmarker,
   FilesetResolver,
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
-import { createCatchGame } from "./catchGame.js?v=13";
+import { createCatchGame } from "./catchGame.js?v=14";
 import { createFighterGame } from "./fighterGame.js?v=12";
 import { createPersonSegmenter } from "./segmentation.js?v=3";
 import { signUp, signIn, signOut, getCurrentUser, fetchCountry, supabase } from "./auth.js?v=1";

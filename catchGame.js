@@ -2,6 +2,25 @@ import { POSE, toCanvasCoords, drawFaceEmoji } from "./utils.js?v=5";
 
 const HAND_RADIUS = 26;
 
+const AVATAR_SRC = {
+  idle: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_idle.png",
+  cheer1: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_cheer1.png",
+  cheer2: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_cheer2.png",
+  hurt: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_hurt.png",
+};
+const AVATAR_CHEER_FRAME_MS = 220;
+const AVATAR_HURT_MS = 550;
+
+function loadSprite(src) {
+  const img = new Image();
+  const sprite = { img, loaded: false };
+  img.onload = () => {
+    sprite.loaded = true;
+  };
+  img.src = src;
+  return sprite;
+}
+
 function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -68,6 +87,13 @@ function playSound(audio) {
 }
 
 export function createCatchGame({ canvas, ctx }) {
+  const avatarSprites = {
+    idle: loadSprite(AVATAR_SRC.idle),
+    cheer1: loadSprite(AVATAR_SRC.cheer1),
+    cheer2: loadSprite(AVATAR_SRC.cheer2),
+    hurt: loadSprite(AVATAR_SRC.hurt),
+  };
+
   const sfxPop = new Audio("balloon_pop.mp3");
   const sfxExplosion = new Audio("explosion_bomb.mp3");
   const sfxGameOver = new Audio("game_over.mp3");
@@ -93,6 +119,7 @@ export function createCatchGame({ canvas, ctx }) {
   }
 
   let score, lives, level, objects, particles, floaters, spawnTimer, spawnInterval, shake, clouds;
+  let avatarCheerTimer, avatarCheerFrame, avatarHurtTimer;
 
   function reset() {
     score = 0;
@@ -104,6 +131,9 @@ export function createCatchGame({ canvas, ctx }) {
     spawnTimer = 0;
     spawnInterval = 1100;
     shake = 0;
+    avatarCheerTimer = 0;
+    avatarCheerFrame = 0;
+    avatarHurtTimer = 0;
 
     clouds = [];
     for (let i = 0; i < 6; i++) {
@@ -163,6 +193,14 @@ export function createCatchGame({ canvas, ctx }) {
     }
 
     shake = Math.max(0, shake - dt * 0.05);
+    avatarHurtTimer = Math.max(0, avatarHurtTimer - dt);
+    if (landmarks) {
+      avatarCheerTimer += dt;
+      if (avatarCheerTimer > AVATAR_CHEER_FRAME_MS) {
+        avatarCheerTimer = 0;
+        avatarCheerFrame = avatarCheerFrame === 0 ? 1 : 0;
+      }
+    }
 
     for (const c of clouds) {
       c.x += c.speed;
@@ -201,6 +239,7 @@ export function createCatchGame({ canvas, ctx }) {
             spawnBurst(obj.x, obj.y, "#ef4444");
             addFloater(obj.x, obj.y - 10, "-1 LIFE", "#ef4444");
             shake = Math.max(shake, 8);
+            avatarHurtTimer = AVATAR_HURT_MS;
             playSound(sfxExplosion);
             if (lives <= 0) playSound(sfxGameOver);
           }
@@ -353,11 +392,42 @@ export function createCatchGame({ canvas, ctx }) {
     ctx.restore();
   }
 
+  // A small mascot standing at the bottom of the screen, cheering while the
+  // player has hands tracked and wincing right after a bomb hit. Purely
+  // decorative — the actual catch/dodge hitboxes are the tracked gloves
+  // below, since those need to precisely follow each wrist independently.
+  function drawAvatar(landmarks) {
+    const pose = avatarHurtTimer > 0 ? "hurt" : landmarks ? (avatarCheerFrame === 0 ? "cheer1" : "cheer2") : "idle";
+    const sprite = avatarSprites[pose];
+    if (!sprite.loaded) return;
+
+    const h = canvas.height * 0.34;
+    const w = h * (sprite.img.naturalWidth / sprite.img.naturalHeight);
+    const baseX = canvas.width / 2;
+    const baseY = canvas.height - 6;
+
+    let lean = 0;
+    if (landmarks) {
+      const leftP = toCanvasCoords(landmarks[POSE.LEFT_WRIST], canvas.width, canvas.height);
+      const rightP = toCanvasCoords(landmarks[POSE.RIGHT_WRIST], canvas.width, canvas.height);
+      const midX = (leftP.x + rightP.x) / 2;
+      lean = Math.max(-0.18, Math.min(0.18, ((midX - canvas.width / 2) / (canvas.width / 2)) * 0.18));
+    }
+
+    ctx.save();
+    ctx.translate(baseX, baseY);
+    ctx.rotate(lean);
+    ctx.drawImage(sprite.img, -w / 2, -h, w, h);
+    ctx.restore();
+  }
+
   function draw(landmarks) {
     ctx.save();
     if (shake > 0.5) {
       ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
     }
+
+    drawAvatar(landmarks);
 
     if (landmarks) {
       for (const [idx, side] of [[POSE.LEFT_WRIST, "left"], [POSE.RIGHT_WRIST, "right"]]) {
