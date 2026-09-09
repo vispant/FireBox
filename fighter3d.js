@@ -193,8 +193,25 @@ function poseRig(rig, o) {
   let legZL = 0;
   let legZR = 0;
   let bodyTwist = 0;
+  let bodyLean = 0;
 
-  if (o.attackType === "punch") {
+  if (o.phase === "entering") {
+    // Alternating-stride run cycle: legs swing opposite each other (sin/−sin),
+    // knees bend hard on the "back" half of the swing (heel lifting behind)
+    // and stay almost straight on the "forward" half (leg reaching ahead),
+    // arms counter-swing opposite their same-side leg like a real running gait.
+    const strideL = Math.sin(o.runCycle || 0);
+    const strideR = -strideL;
+    legL = REACH_SIGN * strideL * 0.95;
+    legR = REACH_SIGN * strideR * 0.95;
+    kneeL = 0.25 + Math.max(0, -strideL) * 1.3;
+    kneeR = 0.25 + Math.max(0, -strideR) * 1.3;
+    armL = -legL * 0.75;
+    armR = -legR * 0.75;
+    elbowL = 1.0;
+    elbowR = 1.0;
+    bodyLean = 0.16; // lean forward into the sprint
+  } else if (o.attackType === "punch") {
     const isLeft = o.attackSide === "left";
     const side = isLeft ? -1 : 1;
     if (o.phase === "telegraph") {
@@ -270,6 +287,7 @@ function poseRig(rig, o) {
   lerpRotX(rig.lowerLegR, kneeR);
   lerpRotZ(rig.upperLegL, legZL);
   lerpRotZ(rig.upperLegR, legZR);
+  lerpRotX(rig.characterGroup, bodyLean);
 
   rig.fallPivot.position.set(o.x, o.y + FEET_OFFSET + Math.sin(o.bob) * 4, 0);
   rig.characterGroup.rotation.y = (o.lookOffset || 0) * 0.5 + bodyTwist;

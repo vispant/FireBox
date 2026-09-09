@@ -5,7 +5,7 @@ import {
   FEET_OFFSET,
   HEAD_CENTER_OFFSET,
   HEAD_RADIUS,
-} from "./fighter3d.js?v=3";
+} from "./fighter3d.js?v=4";
 
 // Tune these if strikes feel unresponsive (too high) or trigger accidentally (too low).
 const STRIKE_SPEED_THRESHOLD = 28; // px moved between detected frames to count as a hit
@@ -25,10 +25,16 @@ const ARMY_SIZE = 5; // grunts that spawn together per stage, before the boss
 const ARMY_WEAKNESS = 0.85; // army is (1 - this) = 15% weaker than the player
 const BOSS_DAMAGE_MULT = 1.65; // boss deals 65% more damage than the player
 const BOSS_HEALTH_MULT = 0.85; // boss has 15% less max health than the player
-const CHASE_SPEED = 0.025; // how eagerly enemies close in on the player's tracked position
+const CHASE_SPEED = 0.025; // how eagerly enemies close in on the player's tracked position once they've arrived and are "idle"
 const FLOOR_LINE_MARGIN = 60; // px up from the very bottom edge where the floor line sits
 const HEAD_KICK_BONUS = 25; // bonus coins for landing a kick specifically on the head
 const HEAD_HIT_PAD = 14; // forgiving extra radius around the head hitbox
+
+const GROUP_SIZE = 2; // grunts that run in together per sub-wave, instead of the whole army appearing at once
+const ENTRY_OFFSCREEN_MARGIN = 140; // px beyond the canvas edge where an entering grunt first appears
+const GROUP_STAGGER_PX = 70; // extra starting-offset for the second grunt in a group so the pair doesn't overlap perfectly
+const RUN_SPEED = 0.55; // px/ms while running in from off-screen -- a constant sprint pace, not the slow idle drift
+const RUN_CYCLE_SPEED = 0.012; // radians/ms driving the leg/arm swing cadence while running in
 
 // Every time the player buys a health or damage upgrade, all NPCs (army AND boss)
 // drop to 65% weaker than the player for their next 15 kills.
@@ -150,6 +156,8 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
 
   let player,
     opponents,
+    armyQueue,
+    lastPlayerX,
     hands,
     feet,
     particles,
@@ -242,19 +250,42 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
     };
   }
 
+  // Activates the next up-to-GROUP_SIZE grunts from armyQueue: each starts
+  // off-screen on the side OPPOSITE the player's current position and in
+  // "entering" phase, so they have to run in before they can fight (see
+  // updateSingleOpponent). The two grunts in a group get slightly different
+  // starting X so they read as a running pair, not overlapping twins.
+  function releaseGroup(playerX) {
+    const group = armyQueue.splice(0, GROUP_SIZE);
+    const enterFromRight = playerX < canvas.width / 2;
+    const edgeX = enterFromRight ? canvas.width + ENTRY_OFFSCREEN_MARGIN : -ENTRY_OFFSCREEN_MARGIN;
+    const staggerDir = enterFromRight ? 1 : -1;
+    group.forEach((g, i) => {
+      g.x = edgeX + staggerDir * i * GROUP_STAGGER_PX;
+      g.y = groundBaselineY() + g.yBase;
+      g.phase = "entering";
+      g.runCycle = Math.random() * Math.PI * 2; // desync the stride so paired grunts don't move in lockstep
+      g.attackTimer = 0;
+      opponents.push(g);
+    });
+  }
+
   function spawnWave() {
     if (player.waveIndex === 0) {
       let prevUniform = null;
       let prevAccessory = null;
-      const list = [];
+      const roster = [];
       for (let i = 0; i < ARMY_SIZE; i++) {
         const g = spawnGrunt(i, prevUniform, prevAccessory);
         prevUniform = g.uniformColor;
         prevAccessory = g.accessory;
-        list.push(g);
+        roster.push(g);
       }
-      opponents = list;
+      armyQueue = roster;
+      opponents = [];
+      releaseGroup(lastPlayerX);
     } else {
+      armyQueue = [];
       opponents = [spawnBoss(null)];
     }
   }
@@ -321,6 +352,7 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
     hitFlashScreen = 0;
     frameShakeX = 0;
     frameShakeY = 0;
+    lastPlayerX = canvas.width / 2;
 
     spawnWave();
 
@@ -393,10 +425,13 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
       player.waveIndex = 0;
       save();
       spawnWave();
-    } else if (opponents.length === 0) {
+    } else if (opponents.length === 0 && armyQueue.length === 0) {
       player.waveIndex = 1;
       save();
       spawnWave();
+    } else if (opponents.length === 0) {
+      releaseGroup(lastPlayerX);
+      save();
     } else {
       save();
     }
@@ -458,12 +493,38 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
       return;
     }
 
-    o.bob += dt * 0.002;
-    o.y = groundBaselineY() + o.yBase + Math.sin(o.bob) * 8;
     o.hitFlash = Math.max(0, o.hitFlash - dt);
-
     const desiredLook = Math.max(-1, Math.min(1, (playerX - o.x) / 220));
     o.lookOffset += (desiredLook - o.lookOffset) * Math.min(1, dt / 250);
+
+    if (o.phase === "entering") {
+      // Sprinting in from off-screen at a constant pace (not the slow idle
+      // drift below) -- bob is driven off the same run cycle the 3D rig uses
+      // for the leg/arm swing, so the footfall bounce stays in sync with it.
+      // dt is clamped here so a stalled frame (camera/model load, a GC pause,
+      // a backgrounded tab) can't let a single frame cover the whole distance
+      // and make the run-in teleport instead of visibly animate.
+      const stepDt = Math.min(dt, 50);
+      o.runCycle += stepDt * RUN_CYCLE_SPEED;
+      o.bob = o.runCycle * 2;
+      o.y = groundBaselineY() + o.yBase + Math.sin(o.bob) * 10;
+
+      const targetX = Math.min(canvas.width - 70, Math.max(70, playerX + o.chaseOffsetX));
+      const dx = targetX - o.x;
+      const step = RUN_SPEED * stepDt;
+      if (Math.abs(dx) <= step) {
+        o.x = targetX;
+        o.phase = "idle";
+        o.bob = Math.random() * Math.PI * 2;
+        o.attackTimer = Math.random() * 400; // small stagger so a just-arrived group doesn't attack in perfect unison
+      } else {
+        o.x += Math.sign(dx) * step;
+      }
+      return;
+    }
+
+    o.bob += dt * 0.002;
+    o.y = groundBaselineY() + o.yBase + Math.sin(o.bob) * 8;
 
     if (o.phase === "idle") {
       const targetX = Math.min(canvas.width - 70, Math.max(70, playerX + o.chaseOffsetX));
@@ -558,6 +619,7 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
       if (isVisible(noseL)) {
         playerX = toCanvasCoords(noseL, canvas.width, canvas.height).x;
       }
+      lastPlayerX = playerX;
 
       trackLimb(hands.left, lwL, lw, false);
       trackLimb(hands.right, rwL, rw, false);
@@ -971,7 +1033,7 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
   }
 
   function getHud() {
-    const waveLabel = player.waveIndex === 1 ? "BOSS FIGHT" : `Army ${opponents.length} left`;
+    const waveLabel = player.waveIndex === 1 ? "BOSS FIGHT" : `Army ${opponents.length + armyQueue.length} left`;
     const weakTag = player.easyKillsRemaining > 0 ? `  ⚡ ${player.easyKillsRemaining} left` : "";
     return {
       left: `🪙 ${player.coins}   ⚡ Lv.${player.level}   🏟️ Stage ${player.stage} · ${waveLabel}${weakTag}`,
