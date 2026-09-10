@@ -192,6 +192,8 @@ function poseRig(rig, o) {
   let kneeR = 0.05;
   let legZL = 0;
   let legZR = 0;
+  let armZL = 0;
+  let armZR = 0;
   let bodyTwist = 0;
   let bodyLean = 0;
 
@@ -226,15 +228,33 @@ function poseRig(rig, o) {
       bodyTwist = -side * 0.12; // wind up away from the punch
     } else if (o.phase === "strike" || o.phase === "recover") {
       const t = o.phase === "strike" ? 1 : 0.35;
-      const v = REACH_SIGN * 1.3 * t;
-      if (isLeft) {
-        armL = v;
-        elbowL = 0.15;
+      // punchHeight ("chest" by default, sometimes "head") set by fighterGame.js
+      // when the attack is chosen -- a head punch hooks up and across instead
+      // of thrusting straight out, so it reads as a distinct aimed strike.
+      if (o.punchHeight === "head") {
+        const v = REACH_SIGN * 0.95 * t;
+        const lift = side * 0.85 * t;
+        if (isLeft) {
+          armL = v;
+          elbowL = 0.65;
+          armZL = lift;
+        } else {
+          armR = v;
+          elbowR = 0.65;
+          armZR = lift;
+        }
+        bodyTwist = side * 0.35 * t;
       } else {
-        armR = v;
-        elbowR = 0.15;
+        const v = REACH_SIGN * 1.3 * t;
+        if (isLeft) {
+          armL = v;
+          elbowL = 0.15;
+        } else {
+          armR = v;
+          elbowR = 0.15;
+        }
+        bodyTwist = side * 0.25 * t; // hips/shoulders rotate into the punch
       }
-      bodyTwist = side * 0.25 * t; // hips/shoulders rotate into the punch
     }
   } else if (o.attackType === "kick") {
     // Roundhouse-style kick: the leg chambers out to the side (knee up and out),
@@ -287,6 +307,8 @@ function poseRig(rig, o) {
   lerpRotX(rig.lowerLegR, kneeR);
   lerpRotZ(rig.upperLegL, legZL);
   lerpRotZ(rig.upperLegR, legZR);
+  lerpRotZ(rig.upperArmL, armZL);
+  lerpRotZ(rig.upperArmR, armZR);
   lerpRotX(rig.characterGroup, bodyLean);
 
   rig.fallPivot.position.set(o.x, o.y + FEET_OFFSET + Math.sin(o.bob) * 4, 0);

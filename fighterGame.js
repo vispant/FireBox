@@ -5,7 +5,7 @@ import {
   FEET_OFFSET,
   HEAD_CENTER_OFFSET,
   HEAD_RADIUS,
-} from "./fighter3d.js?v=4";
+} from "./fighter3d.js?v=5";
 
 // Tune these if strikes feel unresponsive (too high) or trigger accidentally (too low).
 const STRIKE_SPEED_THRESHOLD = 28; // px moved between detected frames to count as a hit
@@ -35,6 +35,10 @@ const ENTRY_OFFSCREEN_MARGIN = 140; // px beyond the canvas edge where an enteri
 const GROUP_STAGGER_PX = 70; // extra starting-offset for the second grunt in a group so the pair doesn't overlap perfectly
 const RUN_SPEED = 0.55; // px/ms while running in from off-screen -- a constant sprint pace, not the slow idle drift
 const RUN_CYCLE_SPEED = 0.012; // radians/ms driving the leg/arm swing cadence while running in
+
+const PUNCH_TELEGRAPH_MS = 180; // a real punch is fast -- barely a chamber, not a held wind-up like the kick's 550ms
+const PUNCH_HEAD_CHANCE = 0.3; // how often an incoming punch targets the head instead of the chest, mirroring kicks
+const HEADSHOT_DAMAGE_MULT = 1.5; // a landed head punch hurts more than a body punch
 
 // Every time the player buys a health or damage upgrade, all NPCs (army AND boss)
 // drop to 65% weaker than the player for their next 15 kills.
@@ -487,8 +491,14 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
   }
 
   function updateSingleOpponent(o, dt, blocking, playerX) {
+    // Clamped everywhere below: a stalled frame (camera/pose-model inference,
+    // a GC pause, a backgrounded tab) could otherwise deliver a huge dt that
+    // resolves an entire phase -- most dangerously the short punch telegraph
+    // -- before it was ever visible, instead of it playing out over real time.
+    const stepDt = Math.min(dt, 50);
+
     if (o.phase === "dying") {
-      o.dyingTimer -= dt;
+      o.dyingTimer -= stepDt;
       if (o.dyingTimer <= 0) finishKill(o);
       return;
     }
@@ -501,10 +511,6 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
       // Sprinting in from off-screen at a constant pace (not the slow idle
       // drift below) -- bob is driven off the same run cycle the 3D rig uses
       // for the leg/arm swing, so the footfall bounce stays in sync with it.
-      // dt is clamped here so a stalled frame (camera/model load, a GC pause,
-      // a backgrounded tab) can't let a single frame cover the whole distance
-      // and make the run-in teleport instead of visibly animate.
-      const stepDt = Math.min(dt, 50);
       o.runCycle += stepDt * RUN_CYCLE_SPEED;
       o.bob = o.runCycle * 2;
       o.y = groundBaselineY() + o.yBase + Math.sin(o.bob) * 10;
@@ -523,32 +529,41 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
       return;
     }
 
-    o.bob += dt * 0.002;
+    o.bob += stepDt * 0.002;
     o.y = groundBaselineY() + o.yBase + Math.sin(o.bob) * 8;
 
     if (o.phase === "idle") {
       const targetX = Math.min(canvas.width - 70, Math.max(70, playerX + o.chaseOffsetX));
       o.x += (targetX - o.x) * CHASE_SPEED;
 
-      o.attackTimer += dt;
+      o.attackTimer += stepDt;
       if (o.attackTimer > o.attackInterval) {
         o.attackTimer = 0;
         o.phase = "telegraph";
-        o.phaseTimer = 550;
         o.attackType = Math.random() < 0.5 ? "punch" : "kick";
         o.attackSide = Math.random() < 0.5 ? "left" : "right";
         o.kickHeight = Math.random() < 0.3 ? "head" : "chest";
+        o.punchHeight = Math.random() < PUNCH_HEAD_CHANCE ? "head" : "chest";
+        // Kicks keep a real wind-up (chambering a leg takes a beat); a punch is
+        // fast -- barely enough telegraph to react to, matching a real jab.
+        o.phaseTimer = o.attackType === "kick" ? 550 : PUNCH_TELEGRAPH_MS;
       }
     } else if (o.phase === "telegraph") {
-      o.phaseTimer -= dt;
+      o.phaseTimer -= stepDt;
       if (o.phaseTimer <= 0) {
         if (blocking) {
           addFloater(canvas.width / 2, canvas.height - 120, "BLOCKED!", "#60a5fa");
         } else {
-          player.health -= o.damage;
+          const isHeadshot = o.attackType === "punch" && o.punchHeight === "head";
+          const dmg = isHeadshot ? Math.round(o.damage * HEADSHOT_DAMAGE_MULT) : o.damage;
+          player.health -= dmg;
           lastAttackerName = o.name;
-          addFloater(canvas.width / 2, canvas.height - 120, `-${o.damage}`, "#ef4444");
-          shake = Math.max(shake, 14);
+          if (isHeadshot) {
+            addFloater(canvas.width / 2, canvas.height - 120, `HEADSHOT! -${dmg}`, "#f87171");
+          } else {
+            addFloater(canvas.width / 2, canvas.height - 120, `-${dmg}`, "#ef4444");
+          }
+          shake = Math.max(shake, isHeadshot ? 20 : 14);
           hitFlashScreen = 1;
           playSound(sfxNpcHit);
         }
@@ -556,13 +571,13 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
         o.phaseTimer = 260;
       }
     } else if (o.phase === "strike") {
-      o.phaseTimer -= dt;
+      o.phaseTimer -= stepDt;
       if (o.phaseTimer <= 0) {
         o.phase = "recover";
         o.phaseTimer = 300;
       }
     } else if (o.phase === "recover") {
-      o.phaseTimer -= dt;
+      o.phaseTimer -= stepDt;
       if (o.phaseTimer <= 0) {
         o.phase = "idle";
         o.attackType = null;
@@ -943,7 +958,13 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
         fx.fillStyle = "#fbbf24";
         fx.font = "bold 16px system-ui, sans-serif";
         const label =
-          o.attackType === "kick" ? (o.kickHeight === "head" ? "HIGH KICK!" : "KICK!") : "PUNCH!";
+          o.attackType === "kick"
+            ? o.kickHeight === "head"
+              ? "HIGH KICK!"
+              : "KICK!"
+            : o.punchHeight === "head"
+              ? "HEAD PUNCH!"
+              : "PUNCH!";
         fx.fillText(label, o.x, by - (o.isBoss ? 30 : 26));
       }
     }
