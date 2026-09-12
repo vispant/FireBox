@@ -51,26 +51,49 @@ function drawGlove(ctx, x, y, side) {
   // wrist cuff -- positioned so it's clearly visible below the palm, not
   // mostly hidden under it (the palm ellipse's bottom edge reaches ~0.9R).
   // Bright orange, not green, so it doesn't blend into the grass behind it.
-  ctx.fillStyle = "#f97316";
+  const cuffGrad = ctx.createLinearGradient(-R * 0.42, 0, R * 0.42, 0);
+  cuffGrad.addColorStop(0, "#c2410c");
+  cuffGrad.addColorStop(0.5, "#fb923c");
+  cuffGrad.addColorStop(1, "#c2410c");
+  ctx.fillStyle = cuffGrad;
   ctx.fillRect(-R * 0.42, R * 0.82, R * 0.84, R * 0.5);
   ctx.strokeStyle = "#7c2d12";
   ctx.lineWidth = 2;
   ctx.strokeRect(-R * 0.42, R * 0.82, R * 0.84, R * 0.5);
+  // a couple of stitch lines across the cuff for a real-strap look
+  ctx.strokeStyle = "rgba(124,45,18,0.6)";
+  ctx.lineWidth = 1;
+  for (const cy of [R * 0.95, R * 1.12]) {
+    ctx.beginPath();
+    ctx.moveTo(-R * 0.42, cy);
+    ctx.lineTo(R * 0.42, cy);
+    ctx.stroke();
+  }
 
   // thumb, drawn first so the palm overlaps its base
   const thumbX = sign * R * 0.7;
+  const thumbGrad = ctx.createLinearGradient(thumbX - R * 0.3, 0, thumbX + R * 0.3, 0);
+  thumbGrad.addColorStop(0, sign < 0 ? "#3f3f46" : "#18181b");
+  thumbGrad.addColorStop(1, sign < 0 ? "#18181b" : "#3f3f46");
   ctx.beginPath();
   ctx.ellipse(thumbX, R * 0.08, R * 0.3, R * 0.46, sign * 0.55, 0, Math.PI * 2);
-  ctx.fillStyle = "#18181b";
+  ctx.fillStyle = thumbGrad;
   ctx.fill();
   ctx.strokeStyle = "#000";
   ctx.lineWidth = 2;
   ctx.stroke();
+  // thumb knuckle seam
+  ctx.strokeStyle = "rgba(0,0,0,0.5)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(thumbX, R * 0.08, R * 0.3, R * 0.46, sign * 0.55, -0.3, 0.3);
+  ctx.stroke();
 
   // padded palm/back of the glove
   const palmGrad = ctx.createRadialGradient(-R * 0.2, -R * 0.3, R * 0.1, 0, 0, R);
-  palmGrad.addColorStop(0, "#52525b");
-  palmGrad.addColorStop(1, "#18181b");
+  palmGrad.addColorStop(0, "#6b7280");
+  palmGrad.addColorStop(0.55, "#3f3f46");
+  palmGrad.addColorStop(1, "#101014");
   ctx.beginPath();
   ctx.ellipse(0, -R * 0.05, R * 0.76, R * 0.95, 0, 0, Math.PI * 2);
   ctx.fillStyle = palmGrad;
@@ -79,16 +102,35 @@ function drawGlove(ctx, x, y, side) {
   ctx.lineWidth = 2.5;
   ctx.stroke();
 
-  // four padded fingers along the top
+  // a center seam line down the back of the glove, like real stitched panels
+  ctx.strokeStyle = "rgba(0,0,0,0.45)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, -R * 0.95);
+  ctx.lineTo(0, R * 0.7);
+  ctx.stroke();
+
+  // four padded fingers along the top, each with its own knuckle seam
   for (let i = 0; i < 4; i++) {
     const fx = (-1.5 + i) * R * 0.34;
     const fLen = R * (i === 1 || i === 2 ? 0.62 : 0.5);
+    const fTipY = -R * 0.7 - fLen * 0.3;
+    const fGrad = ctx.createLinearGradient(fx - R * 0.15, 0, fx + R * 0.15, 0);
+    fGrad.addColorStop(0, "#3f3f46");
+    fGrad.addColorStop(1, "#18181b");
     ctx.beginPath();
-    ctx.ellipse(fx, -R * 0.7 - fLen * 0.3, R * 0.15, fLen * 0.42, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "#27272a";
+    ctx.ellipse(fx, fTipY, R * 0.15, fLen * 0.42, 0, 0, Math.PI * 2);
+    ctx.fillStyle = fGrad;
     ctx.fill();
     ctx.strokeStyle = "#000";
     ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(fx - R * 0.15, fTipY);
+    ctx.lineTo(fx + R * 0.15, fTipY);
     ctx.stroke();
   }
 
@@ -101,6 +143,15 @@ function drawGlove(ctx, x, y, side) {
       ctx.fill();
     }
   }
+
+  // glossy highlight sheen on the padded back of the glove
+  const sheen = ctx.createRadialGradient(-R * 0.32, -R * 0.55, 0, -R * 0.32, -R * 0.55, R * 0.4);
+  sheen.addColorStop(0, "rgba(255,255,255,0.35)");
+  sheen.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.beginPath();
+  ctx.ellipse(-R * 0.32, -R * 0.55, R * 0.38, R * 0.28, -0.4, 0, Math.PI * 2);
+  ctx.fillStyle = sheen;
+  ctx.fill();
 
   ctx.restore();
 }
@@ -336,19 +387,31 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     }
   }
 
-  // Diagonal-crosshatch net texture, clipped to a rectangle. Used for both the
-  // overhead net panel and the two side panels flaring out past the posts.
-  function drawNetPanel(x, y, w, h) {
+  // Diagonal-crosshatch net texture, clipped to a rectangle, with a depth
+  // gradient (darker toward the far/inner edge) so it doesn't read as flat.
+  // Used for both the overhead net panel and the two side panels flaring
+  // out past the posts.
+  function drawNetPanel(x, y, w, h, darkEdge) {
     if (w <= 0 || h <= 0) return;
     ctx.save();
     ctx.beginPath();
     ctx.rect(x, y, w, h);
     ctx.clip();
-    ctx.fillStyle = "rgba(15,23,42,0.6)";
+
+    const shade = ctx.createLinearGradient(
+      darkEdge === "left" ? x + w : darkEdge === "right" ? x : x,
+      darkEdge === "top" ? y + h : y,
+      darkEdge === "left" ? x : darkEdge === "right" ? x + w : x,
+      darkEdge === "top" ? y : y + h
+    );
+    shade.addColorStop(0, "rgba(15,23,42,0.5)");
+    shade.addColorStop(1, "rgba(15,23,42,0.78)");
+    ctx.fillStyle = shade;
     ctx.fillRect(x, y, w, h);
+
     ctx.strokeStyle = "rgba(255,255,255,0.5)";
     ctx.lineWidth = 1;
-    const step = 15;
+    const step = 12;
     const span = w + h;
     for (let i = -span; i < span; i += step) {
       ctx.beginPath();
@@ -363,8 +426,8 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     ctx.restore();
   }
 
-  // Stadium behind the pitch: sky, a stand packed with a crowd of colored
-  // dots, floodlights, and an advertising-board strip at pitch level.
+  // Stadium behind the pitch: sky, a roofed stand packed with a crowd of
+  // colored dots, floodlights with glow, and a segmented advertising strip.
   function drawStadium() {
     const w = canvas.width;
     const horizon = canvas.height * 0.34;
@@ -375,35 +438,67 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, horizon);
 
+    const roofTop = horizon * 0.14;
     const standsTop = horizon * 0.3;
-    ctx.fillStyle = "#1e293b";
+
+    // roof: a dark band with a lighter underside edge, sitting above the stand
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, roofTop, w, standsTop - roofTop);
+    ctx.fillStyle = "rgba(148,163,184,0.4)";
+    ctx.fillRect(0, standsTop - 3, w, 3);
+
+    // stand body, shaded darker toward the bottom (closer to pitch level)
+    const standGrad = ctx.createLinearGradient(0, standsTop, 0, horizon);
+    standGrad.addColorStop(0, "#1e293b");
+    standGrad.addColorStop(1, "#0f172a");
+    ctx.fillStyle = standGrad;
     ctx.fillRect(0, standsTop, w, horizon - standsTop);
 
-    const rows = 4;
+    // crowd: more rows, varied dot size/brightness for texture depth
+    const rows = 6;
     for (let r = 0; r < rows; r++) {
       const y = standsTop + ((horizon - standsTop) * (r + 0.5)) / rows;
-      const count = 46;
+      const count = 58;
+      const dotR = 1.6 + (rows - r) * 0.25;
       for (let i = 0; i < count; i++) {
         const x = (w / count) * (i + 0.5) + Math.sin(i * 12.9 + r * 3.1) * 3;
         const hue = (i * 47 + r * 91) % 360;
-        ctx.fillStyle = `hsl(${hue}, 55%, ${50 + (r % 2) * 12}%)`;
+        const light = 42 + (r % 2) * 14 + ((i * 7) % 10);
+        ctx.fillStyle = `hsl(${hue}, 50%, ${light}%)`;
         ctx.beginPath();
-        ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+        ctx.arc(x, y, dotR, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
-    for (const fx of [w * 0.08, w * 0.92]) {
-      ctx.fillStyle = "#94a3b8";
-      ctx.fillRect(fx - 3, standsTop - 42, 6, 42);
-      ctx.fillStyle = "#f8fafc";
+    // floodlights with a soft glow and a small bulb cluster
+    for (const fx of [w * 0.06, w * 0.94]) {
+      const lampY = roofTop - 6;
+      const beam = ctx.createRadialGradient(fx, lampY, 0, fx, lampY, 30);
+      beam.addColorStop(0, "rgba(255,251,235,0.55)");
+      beam.addColorStop(1, "rgba(255,251,235,0)");
+      ctx.fillStyle = beam;
       ctx.beginPath();
-      ctx.arc(fx, standsTop - 48, 11, 0, Math.PI * 2);
+      ctx.arc(fx, lampY, 30, 0, Math.PI * 2);
       ctx.fill();
+
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillRect(fx - 3, lampY, 6, standsTop - lampY);
+      for (const [ox, oy] of [[-6, -8], [6, -8], [0, -12]]) {
+        ctx.fillStyle = "#fefce8";
+        ctx.beginPath();
+        ctx.arc(fx + ox, lampY + oy, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
-    ctx.fillStyle = "#dc2626";
-    ctx.fillRect(0, horizon - 14, w, 14);
+    // advertising boards: alternating colored segments, not a flat strip
+    const boardColors = ["#dc2626", "#2563eb", "#f59e0b", "#16a34a", "#7c3aed"];
+    const segW = w / 9;
+    for (let i = 0; i < 9; i++) {
+      ctx.fillStyle = boardColors[i % boardColors.length];
+      ctx.fillRect(i * segW, horizon - 16, segW - 2, 16);
+    }
 
     return horizon;
   }
@@ -425,27 +520,91 @@ export function createGoalkeeperGame({ canvas, ctx }) {
       const yBot = horizon + (h - horizon) * (tBot * tBot);
       ctx.fillStyle = i % 2 === 0 ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
       ctx.fillRect(0, yTop, w, yBot - yTop);
+
+      // short grass-blade dashes within each stripe band for texture
+      ctx.strokeStyle = i % 2 === 0 ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.08)";
+      ctx.lineWidth = 1;
+      const dashCount = 14;
+      for (let d = 0; d < dashCount; d++) {
+        const dx = (w / dashCount) * (d + 0.5) + ((i * 37) % 17) - 8;
+        const dy = yTop + (yBot - yTop) * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(dx, dy - 3);
+        ctx.lineTo(dx, dy + 3);
+        ctx.stroke();
+      }
     }
+
+    // penalty box: a trapezoid converging toward the horizon (nearer edge is
+    // wider, matching the "you're looking out from the goal line" framing)
+    const nearW = w * 0.82;
+    const farW = w * 0.42;
+    const boxTop = horizon + (h - horizon) * 0.06;
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo((w - nearW) / 2, h);
+    ctx.lineTo((w - farW) / 2, boxTop);
+    ctx.lineTo((w + farW) / 2, boxTop);
+    ctx.lineTo((w + nearW) / 2, h);
+    ctx.stroke();
+
+    // center-circle arc hint, foreshortened into a flattened ellipse near the horizon
+    ctx.beginPath();
+    ctx.ellipse(w / 2, horizon + (h - horizon) * 0.14, w * 0.16, (h - horizon) * 0.05, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // penalty spot
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath();
+    ctx.arc(w / 2, horizon + (h - horizon) * 0.32, 3, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // Foreground frame: crossbar + posts with net visible above them and
   // flaring out past them on each side, so the whole screen reads as "you're
   // standing in the goal looking out" instead of a small frame mid-scene.
+  function drawPost(x, y, w, h) {
+    // cylindrical look: a base fill plus a lighter highlight stripe down the
+    // middle, instead of a flat rectangle
+    ctx.fillStyle = "#e2e8f0";
+    ctx.fillRect(x, y, w, h);
+    const highlight = ctx.createLinearGradient(x, 0, x + w, 0);
+    highlight.addColorStop(0, "rgba(255,255,255,0)");
+    highlight.addColorStop(0.5, "rgba(255,255,255,0.9)");
+    highlight.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = highlight;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = "rgba(100,116,139,0.6)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, w, h);
+  }
+
   function drawGoalFrame() {
     const w = canvas.width;
     const h = canvas.height;
     const inset = postInset();
-    const postW = w * 0.02;
+    const postW = w * 0.022;
     const barY = crossbarY();
 
-    drawNetPanel(0, 0, w, barY);
-    drawNetPanel(0, barY, inset, h - barY);
-    drawNetPanel(w - inset, barY, inset, h - barY);
+    drawNetPanel(0, 0, w, barY, "top");
+    drawNetPanel(0, barY, inset, h - barY, "left");
+    drawNetPanel(w - inset, barY, inset, h - barY, "right");
 
-    ctx.fillStyle = "#f8fafc";
-    ctx.fillRect(0, barY - postW, w, postW);
-    ctx.fillRect(inset - postW, barY, postW, h - barY);
-    ctx.fillRect(w - inset, barY, postW, h - barY);
+    // soft ground shadow where each post meets the pitch
+    for (const px of [inset - postW / 2, w - inset + postW / 2]) {
+      const shadow = ctx.createRadialGradient(px, h - 6, 0, px, h - 6, postW * 3);
+      shadow.addColorStop(0, "rgba(0,0,0,0.35)");
+      shadow.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = shadow;
+      ctx.beginPath();
+      ctx.ellipse(px, h - 6, postW * 3, postW, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    drawPost(0, barY - postW, w, postW);
+    drawPost(inset - postW, barY, postW, h - barY);
+    drawPost(w - inset, barY, postW, h - barY);
   }
 
   function drawShooter() {
@@ -459,6 +618,27 @@ export function createGoalkeeperGame({ canvas, ctx }) {
 
   function drawBall() {
     if (!ball || phase === "windup") return;
+
+    // a short motion streak behind the ball once it's moving fast, so the
+    // flight reads as a real strike rather than a floating sprite
+    const dx = ball.endX - ball.startX;
+    const dy = ball.endY - ball.startY;
+    const dist = Math.hypot(dx, dy) || 1;
+    const backX = -dx / dist;
+    const backY = -dy / dist;
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    const streak = ctx.createLinearGradient(ball.x, ball.y, ball.x + backX * ball.r * 4, ball.y + backY * ball.r * 4);
+    streak.addColorStop(0, "rgba(255,255,255,0.8)");
+    streak.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.strokeStyle = streak;
+    ctx.lineWidth = ball.r * 0.9;
+    ctx.beginPath();
+    ctx.moveTo(ball.x, ball.y);
+    ctx.lineTo(ball.x + backX * ball.r * 4, ball.y + backY * ball.r * 4);
+    ctx.stroke();
+    ctx.restore();
+
     ctx.save();
     ctx.translate(ball.x, ball.y);
     ctx.fillStyle = "rgba(0,0,0,0.25)";
@@ -466,9 +646,14 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     ctx.ellipse(0, ball.r * 0.9, ball.r * 0.8, ball.r * 0.25, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#f8fafc";
+    // rounded 3D shading instead of a flat white fill
+    const ballGrad = ctx.createRadialGradient(-ball.r * 0.35, -ball.r * 0.35, ball.r * 0.1, 0, 0, ball.r);
+    ballGrad.addColorStop(0, "#ffffff");
+    ballGrad.addColorStop(0.7, "#f1f5f9");
+    ballGrad.addColorStop(1, "#cbd5e1");
     ctx.beginPath();
     ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
+    ctx.fillStyle = ballGrad;
     ctx.fill();
     ctx.strokeStyle = "#0f172a";
     ctx.lineWidth = Math.max(1, ball.r * 0.08);
@@ -484,6 +669,13 @@ export function createGoalkeeperGame({ canvas, ctx }) {
       ctx.arc(Math.cos(a) * ball.r * 0.55, Math.sin(a) * ball.r * 0.55, ball.r * 0.22, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    // small glossy highlight for a rounder look
+    ctx.beginPath();
+    ctx.ellipse(-ball.r * 0.35, -ball.r * 0.4, ball.r * 0.22, ball.r * 0.14, -0.5, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.fill();
+
     ctx.restore();
   }
 
