@@ -1,6 +1,5 @@
 import { POSE, toCanvasCoords } from "./utils.js?v=5";
 
-const HAND_SPRITE_SRC = "Asset/hands.png";
 const SHOOTER_SRC = {
   idle: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_idle.png",
   kick: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_kick.png",
@@ -17,7 +16,7 @@ const BASE_FLIGHT_MS = 1150; // how long a level-1 shot takes to arrive
 const FLIGHT_MS_PER_LEVEL = 95; // faster each level (less reaction time)
 const MIN_FLIGHT_MS = 430; // never gets unfairly instant
 const SAVE_RADIUS = 46; // how close a tracked hand must get to the ball to save it
-const HAND_ICON_SIZE = 70;
+const GLOVE_SIZE = 36; // half-size of the drawn glove (see drawGlove)
 
 function loadSprite(src) {
   const img = new Image();
@@ -29,53 +28,80 @@ function loadSprite(src) {
   return sprite;
 }
 
-function hexToRgba(hex, alpha) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-// A single hand icon (Asset/hands.png, real goalkeeper gloves would both be
-// the same color) mirrored for the right side so only one image is needed,
-// same trick already used in catchGame.js.
-function drawHandSprite(ctx, sprite, x, y, side) {
-  const baseColor = "#4ade80";
-  const w = HAND_ICON_SIZE;
-  const aspect = sprite.img.naturalHeight / sprite.img.naturalWidth;
-  const h = w * aspect;
+// A dark padded goalkeeper glove -- drawn, not a downloaded sprite, since no
+// free CC0/no-attribution glove art exists that matches (see project memory:
+// same conclusion reached for Catch & Dodge's hand icon search). Fingers,
+// a textured grip palm, and a colored wrist cuff (a real detail on actual
+// keeper gloves) read as "goalkeeper" rather than a plain hand silhouette.
+function drawGlove(ctx, x, y, side) {
+  const sign = side === "left" ? -1 : 1;
+  const R = GLOVE_SIZE;
 
   ctx.save();
   ctx.translate(x, y);
-  if (side === "right") ctx.scale(-1, 1);
 
-  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, w * 0.9);
-  glow.addColorStop(0, hexToRgba(baseColor, 0.3));
-  glow.addColorStop(1, hexToRgba(baseColor, 0));
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 1.7);
+  glow.addColorStop(0, "rgba(0,0,0,0.3)");
+  glow.addColorStop(1, "rgba(0,0,0,0)");
   ctx.beginPath();
-  ctx.arc(0, 0, w * 0.9, 0, Math.PI * 2);
+  ctx.arc(0, 0, R * 1.7, 0, Math.PI * 2);
   ctx.fillStyle = glow;
   ctx.fill();
 
-  ctx.drawImage(sprite.img, -w / 2, -h / 2, w, h);
-  ctx.restore();
-}
+  // wrist cuff -- positioned so it's clearly visible below the palm, not
+  // mostly hidden under it (the palm ellipse's bottom edge reaches ~0.9R).
+  // Bright orange, not green, so it doesn't blend into the grass behind it.
+  ctx.fillStyle = "#f97316";
+  ctx.fillRect(-R * 0.42, R * 0.82, R * 0.84, R * 0.5);
+  ctx.strokeStyle = "#7c2d12";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(-R * 0.42, R * 0.82, R * 0.84, R * 0.5);
 
-// Fallback glove (drawn, not the sprite) for the brief window before the
-// image loads -- same pattern as catchGame.js's drawHandGlove.
-function drawHandFallback(ctx, x, y) {
-  ctx.save();
-  ctx.translate(x, y);
-  const grad = ctx.createRadialGradient(-10, -10, 4, 0, 0, 32);
-  grad.addColorStop(0, "#bbf7d0");
-  grad.addColorStop(1, "#16a34a");
+  // thumb, drawn first so the palm overlaps its base
+  const thumbX = sign * R * 0.7;
   ctx.beginPath();
-  ctx.arc(0, 0, 32, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
+  ctx.ellipse(thumbX, R * 0.08, R * 0.3, R * 0.46, sign * 0.55, 0, Math.PI * 2);
+  ctx.fillStyle = "#18181b";
   ctx.fill();
-  ctx.strokeStyle = "rgba(255,255,255,0.8)";
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 2;
   ctx.stroke();
+
+  // padded palm/back of the glove
+  const palmGrad = ctx.createRadialGradient(-R * 0.2, -R * 0.3, R * 0.1, 0, 0, R);
+  palmGrad.addColorStop(0, "#52525b");
+  palmGrad.addColorStop(1, "#18181b");
+  ctx.beginPath();
+  ctx.ellipse(0, -R * 0.05, R * 0.76, R * 0.95, 0, 0, Math.PI * 2);
+  ctx.fillStyle = palmGrad;
+  ctx.fill();
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // four padded fingers along the top
+  for (let i = 0; i < 4; i++) {
+    const fx = (-1.5 + i) * R * 0.34;
+    const fLen = R * (i === 1 || i === 2 ? 0.62 : 0.5);
+    ctx.beginPath();
+    ctx.ellipse(fx, -R * 0.7 - fLen * 0.3, R * 0.15, fLen * 0.42, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#27272a";
+    ctx.fill();
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // grip-texture dots on the palm
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
+  for (let gy = -0.4; gy <= 0.5; gy += 0.32) {
+    for (let gx = -0.4; gx <= 0.4; gx += 0.32) {
+      ctx.beginPath();
+      ctx.arc(gx * R, gy * R, R * 0.055, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   ctx.restore();
 }
 
@@ -86,7 +112,6 @@ function getHandPoint(landmarks, idx, canvasWidth, canvasHeight) {
 }
 
 export function createGoalkeeperGame({ canvas, ctx }) {
-  const handSprite = loadSprite(HAND_SPRITE_SRC);
   const shooterSprites = {
     idle: loadSprite(SHOOTER_SRC.idle),
     kick: loadSprite(SHOOTER_SRC.kick),
@@ -125,26 +150,30 @@ export function createGoalkeeperGame({ canvas, ctx }) {
   let score, lives, level, shotsThisLevel, handsReady, countdown;
   let phase, phaseTimer, ball, zoneIndex, lastZoneIndex, particles, floaters, shake;
 
-  function goalRect() {
-    const w = canvas.width * 0.7;
-    const h = canvas.height * 0.34;
-    const x = (canvas.width - w) / 2;
-    const y = canvas.height * 0.4;
-    return { x, y, w, h };
+  // First-person "standing in the goal" framing: the posts sit near the left/
+  // right screen edges and the crossbar near the top, so the whole screen
+  // reads as the goal mouth instead of a small frame drawn mid-scene.
+  function postInset() {
+    return canvas.width * 0.055;
+  }
+
+  function crossbarY() {
+    return canvas.height * 0.06;
   }
 
   function zonesX() {
-    const g = goalRect();
-    return [g.x + g.w * 0.16, g.x + g.w * 0.5, g.x + g.w * 0.84];
+    const left = postInset();
+    const right = canvas.width - postInset();
+    const w = right - left;
+    return [left + w * 0.16, left + w * 0.5, left + w * 0.84];
   }
 
   function goalLineY() {
-    const g = goalRect();
-    return g.y + g.h * 0.68;
+    return canvas.height * 0.82;
   }
 
   function shooterPos() {
-    return { x: canvas.width / 2, y: canvas.height * 0.16 };
+    return { x: canvas.width / 2, y: canvas.height * 0.36 };
   }
 
   function currentFlightMs() {
@@ -307,54 +336,116 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     }
   }
 
-  function drawGoal() {
-    const g = goalRect();
-    ctx.strokeStyle = "#f8fafc";
-    ctx.lineWidth = 8;
-    ctx.strokeRect(g.x, g.y, g.w, g.h);
-
-    ctx.strokeStyle = "rgba(248,250,252,0.35)";
-    ctx.lineWidth = 1.5;
-    const cols = 10;
-    const rows = 6;
-    for (let i = 1; i < cols; i++) {
-      const x = g.x + (g.w * i) / cols;
+  // Diagonal-crosshatch net texture, clipped to a rectangle. Used for both the
+  // overhead net panel and the two side panels flaring out past the posts.
+  function drawNetPanel(x, y, w, h) {
+    if (w <= 0 || h <= 0) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.fillStyle = "rgba(15,23,42,0.6)";
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 1;
+    const step = 15;
+    const span = w + h;
+    for (let i = -span; i < span; i += step) {
       ctx.beginPath();
-      ctx.moveTo(x, g.y);
-      ctx.lineTo(x, g.y + g.h);
+      ctx.moveTo(x + i, y);
+      ctx.lineTo(x + i - h, y + h);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x + i, y);
+      ctx.lineTo(x + i + h, y + h);
       ctx.stroke();
     }
-    for (let i = 1; i < rows; i++) {
-      const y = g.y + (g.h * i) / rows;
+    ctx.restore();
+  }
+
+  // Stadium behind the pitch: sky, a stand packed with a crowd of colored
+  // dots, floodlights, and an advertising-board strip at pitch level.
+  function drawStadium() {
+    const w = canvas.width;
+    const horizon = canvas.height * 0.34;
+
+    const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+    sky.addColorStop(0, "#7dd3fc");
+    sky.addColorStop(1, "#bae6fd");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, horizon);
+
+    const standsTop = horizon * 0.3;
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(0, standsTop, w, horizon - standsTop);
+
+    const rows = 4;
+    for (let r = 0; r < rows; r++) {
+      const y = standsTop + ((horizon - standsTop) * (r + 0.5)) / rows;
+      const count = 46;
+      for (let i = 0; i < count; i++) {
+        const x = (w / count) * (i + 0.5) + Math.sin(i * 12.9 + r * 3.1) * 3;
+        const hue = (i * 47 + r * 91) % 360;
+        ctx.fillStyle = `hsl(${hue}, 55%, ${50 + (r % 2) * 12}%)`;
+        ctx.beginPath();
+        ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    for (const fx of [w * 0.08, w * 0.92]) {
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillRect(fx - 3, standsTop - 42, 6, 42);
+      ctx.fillStyle = "#f8fafc";
       ctx.beginPath();
-      ctx.moveTo(g.x, y);
-      ctx.lineTo(g.x + g.w, y);
-      ctx.stroke();
+      ctx.arc(fx, standsTop - 48, 11, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = "#dc2626";
+    ctx.fillRect(0, horizon - 14, w, 14);
+
+    return horizon;
+  }
+
+  function drawPitch(horizon) {
+    const w = canvas.width;
+    const h = canvas.height;
+    const grad = ctx.createLinearGradient(0, horizon, 0, h);
+    grad.addColorStop(0, "#15803d");
+    grad.addColorStop(1, "#22c55e");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, horizon, w, h - horizon);
+
+    const stripes = 7;
+    for (let i = 0; i < stripes; i++) {
+      const tTop = i / stripes;
+      const tBot = (i + 1) / stripes;
+      const yTop = horizon + (h - horizon) * (tTop * tTop);
+      const yBot = horizon + (h - horizon) * (tBot * tBot);
+      ctx.fillStyle = i % 2 === 0 ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+      ctx.fillRect(0, yTop, w, yBot - yTop);
     }
   }
 
-  function drawPitch() {
+  // Foreground frame: crossbar + posts with net visible above them and
+  // flaring out past them on each side, so the whole screen reads as "you're
+  // standing in the goal looking out" instead of a small frame mid-scene.
+  function drawGoalFrame() {
     const w = canvas.width;
     const h = canvas.height;
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "#166534");
-    grad.addColorStop(1, "#22c55e");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
+    const inset = postInset();
+    const postW = w * 0.02;
+    const barY = crossbarY();
 
-    ctx.strokeStyle = "rgba(255,255,255,0.25)";
-    ctx.lineWidth = 3;
-    for (let i = 0; i < 6; i++) {
-      ctx.fillStyle = i % 2 === 0 ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)";
-      ctx.fillRect(0, (h / 6) * i, w, h / 6);
-    }
+    drawNetPanel(0, 0, w, barY);
+    drawNetPanel(0, barY, inset, h - barY);
+    drawNetPanel(w - inset, barY, inset, h - barY);
 
-    const g = goalRect();
-    const boxW = g.w * 1.35;
-    const boxH = g.h * 1.55;
-    ctx.strokeRect((w - boxW) / 2, g.y, boxW, boxH);
-
-    drawGoal();
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(0, barY - postW, w, postW);
+    ctx.fillRect(inset - postW, barY, postW, h - barY);
+    ctx.fillRect(w - inset, barY, postW, h - barY);
   }
 
   function drawShooter() {
@@ -425,7 +516,8 @@ export function createGoalkeeperGame({ canvas, ctx }) {
   }
 
   function drawBackground() {
-    drawPitch();
+    const horizon = drawStadium();
+    drawPitch(horizon);
   }
 
   function draw(landmarks) {
@@ -448,8 +540,7 @@ export function createGoalkeeperGame({ canvas, ctx }) {
         [POSE.RIGHT_WRIST, "right"],
       ]) {
         const p = getHandPoint(landmarks, idx, canvas.width, canvas.height);
-        if (handSprite.loaded) drawHandSprite(ctx, handSprite, p.x, p.y, side);
-        else drawHandFallback(ctx, p.x, p.y);
+        drawGlove(ctx, p.x, p.y, side);
       }
     }
 
@@ -471,6 +562,8 @@ export function createGoalkeeperGame({ canvas, ctx }) {
       ctx.globalAlpha = 1;
     }
 
+    drawGoalFrame();
+
     ctx.restore();
 
     if (countdown > 0) {
@@ -484,8 +577,8 @@ export function createGoalkeeperGame({ canvas, ctx }) {
 
   function getHud() {
     return {
-      left: `🧤 Saves: ${score}   ⚡ Lv.${level}`,
-      right: "❤".repeat(Math.max(lives, 0)) || "💔",
+      left: `🏟️ Match ${level}   ⚽ Kick ${Math.min(shotsThisLevel + 1, SHOTS_PER_LEVEL)}/${SHOTS_PER_LEVEL}`,
+      right: `🧤 ${score}   ${"❤".repeat(Math.max(lives, 0)) || "💔"}`,
     };
   }
 
