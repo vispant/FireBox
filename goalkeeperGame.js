@@ -4,6 +4,7 @@ const SHOOTER_SRC = {
   idle: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_idle.png",
   kick: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_kick.png",
 };
+const BALL_SRC = "Asset/football/PNG/Equipment/ball_soccer1.png"; // user-provided Kenney Sports Pack
 
 const VISIBILITY_MIN = 0.4; // ignore a tracked point if the model isn't confident it's in frame
 const COUNTDOWN_SECONDS = 3;
@@ -167,6 +168,7 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     idle: loadSprite(SHOOTER_SRC.idle),
     kick: loadSprite(SHOOTER_SRC.kick),
   };
+  const ballSprite = loadSprite(BALL_SRC);
 
   const sfxPop = new Audio("balloon_pop.mp3");
   const sfxExplosion = new Audio("explosion_bomb.mp3");
@@ -646,35 +648,34 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     ctx.ellipse(0, ball.r * 0.9, ball.r * 0.8, ball.r * 0.25, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // rounded 3D shading instead of a flat white fill
-    const ballGrad = ctx.createRadialGradient(-ball.r * 0.35, -ball.r * 0.35, ball.r * 0.1, 0, 0, ball.r);
-    ballGrad.addColorStop(0, "#ffffff");
-    ballGrad.addColorStop(0.7, "#f1f5f9");
-    ballGrad.addColorStop(1, "#cbd5e1");
-    ctx.beginPath();
-    ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
-    ctx.fillStyle = ballGrad;
-    ctx.fill();
-    ctx.strokeStyle = "#0f172a";
-    ctx.lineWidth = Math.max(1, ball.r * 0.08);
-    ctx.stroke();
-
-    ctx.fillStyle = "#1e293b";
-    ctx.beginPath();
-    ctx.arc(0, 0, ball.r * 0.32, 0, Math.PI * 2);
-    ctx.fill();
-    for (let i = 0; i < 5; i++) {
-      const a = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+    if (ballSprite.loaded) {
+      const d = ball.r * 2;
+      ctx.drawImage(ballSprite.img, -d / 2, -d / 2, d, d);
+    } else {
+      // procedural fallback for the brief window before the sprite loads
+      const ballGrad = ctx.createRadialGradient(-ball.r * 0.35, -ball.r * 0.35, ball.r * 0.1, 0, 0, ball.r);
+      ballGrad.addColorStop(0, "#ffffff");
+      ballGrad.addColorStop(0.7, "#f1f5f9");
+      ballGrad.addColorStop(1, "#cbd5e1");
       ctx.beginPath();
-      ctx.arc(Math.cos(a) * ball.r * 0.55, Math.sin(a) * ball.r * 0.55, ball.r * 0.22, 0, Math.PI * 2);
+      ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
+      ctx.fillStyle = ballGrad;
       ctx.fill();
-    }
+      ctx.strokeStyle = "#0f172a";
+      ctx.lineWidth = Math.max(1, ball.r * 0.08);
+      ctx.stroke();
 
-    // small glossy highlight for a rounder look
-    ctx.beginPath();
-    ctx.ellipse(-ball.r * 0.35, -ball.r * 0.4, ball.r * 0.22, ball.r * 0.14, -0.5, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,255,255,0.7)";
-    ctx.fill();
+      ctx.fillStyle = "#1e293b";
+      ctx.beginPath();
+      ctx.arc(0, 0, ball.r * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+      for (let i = 0; i < 5; i++) {
+        const a = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * ball.r * 0.55, Math.sin(a) * ball.r * 0.55, ball.r * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
 
     ctx.restore();
   }
