@@ -3,7 +3,7 @@ import {
   FilesetResolver,
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
 import { createCatchGame } from "./catchGame.js?v=18";
-import { createFighterGame } from "./fighterGame.js?v=14";
+import { createFighterGame } from "./fighterGame.js?v=15";
 import { createGoalkeeperGame } from "./goalkeeperGame.js?v=4";
 import { createPenaltyKicksGame } from "./penaltyKicksGame.js?v=2";
 import { createPersonSegmenter } from "./segmentation.js?v=3";
@@ -16,6 +16,7 @@ import { createBrickGame } from "./brickGame.js?v=6";
 import { createRunnerGame } from "./runnerGame.js?v=3";
 import { createHopperGame } from "./hopperGame.js?v=8";
 import { createCarDodgeGame } from "./carDodgeGame.js?v=17";
+import { enableSupersampling } from "./renderScale.js?v=1";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -23,6 +24,8 @@ const ctx = canvas.getContext("2d");
 const threeCanvas = document.getElementById("three-canvas");
 const fxCanvas = document.getElementById("fx-canvas");
 const fxCtx = fxCanvas.getContext("2d");
+enableSupersampling(canvas, ctx);
+enableSupersampling(fxCanvas, fxCtx);
 const hud = document.getElementById("hud");
 const hudLeft = document.getElementById("hudLeft");
 const hudRight = document.getElementById("hudRight");

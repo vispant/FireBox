@@ -1,4 +1,5 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js";
+import { getRenderScale } from "./renderScale.js?v=1";
 
 // Procedural humanoid rig: capsule limbs + box torso + sphere head, jointed with
 // nested pivots so each limb rotates like a real bone. No downloaded assets.
@@ -332,7 +333,7 @@ export function createFighter3D(canvasEl) {
   let webglOk = true;
   try {
     renderer = new THREE.WebGLRenderer({ canvas: canvasEl, alpha: true, antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(getRenderScale());
   } catch (err) {
     console.warn("WebGL unavailable, 3D characters disabled:", err);
     webglOk = false;
@@ -355,17 +356,25 @@ export function createFighter3D(canvasEl) {
 
   let lastW = 0;
   let lastH = 0;
+  let lastRatio = 0;
   const rigs = new Map();
 
   function ensureSize(width, height) {
-    if (!width || !height || (width === lastW && height === lastH)) return;
+    if (!width || !height) return;
+    const ratio = getRenderScale();
+    const wantW = Math.round(width * ratio);
+    // main.js resets the canvas attribute size when a game menu opens, so also
+    // re-sync whenever the actual drawing buffer no longer matches.
+    if (width === lastW && height === lastH && ratio === lastRatio && canvasEl.width === wantW) return;
     lastW = width;
     lastH = height;
+    lastRatio = ratio;
     camera.left = 0;
     camera.right = width;
     camera.top = 0;
     camera.bottom = height;
     camera.updateProjectionMatrix();
+    renderer.setPixelRatio(ratio);
     renderer.setSize(width, height, false);
   }
 
