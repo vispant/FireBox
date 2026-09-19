@@ -14,10 +14,9 @@ const JOIN_TIMEOUT_MS = 45000;
 const LIVES = 3;
 const SHOTS_PER_LEVEL = 3;
 const KICKS_PER_PLAYER = 5; // multiplayer: standard shootout length before sudden death
-const QUESTION_TIME_MS = 8000; // answer window; a timeout counts as wrong
 const WINDUP_MS = 650;
 const RESULT_MS = 850;
-const MISS_MS = 900; // "skied it over the bar" cutscene for a wrong/timed-out answer
+const MISS_MS = 900; // "skied it over the bar" cutscene for a wrong answer
 const BASE_FLIGHT_MS = 1150;
 const FLIGHT_MS_PER_LEVEL = 95;
 const MIN_FLIGHT_MS = 430;
@@ -62,66 +61,75 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Difficulty tier keyed off a level/round counter: tier 1 (levels 1-2) is
-// simple +/-, tier 2 (3-4) adds multiplication, tier 3 (5+) widens ranges.
-function tierForCounter(n) {
-  if (n <= 2) return 1;
-  if (n <= 4) return 2;
-  return 3;
+const MIN_GRADE = 1;
+const MAX_GRADE = 8;
+const DEFAULT_GRADE = 4;
+const GRADE_STORAGE_KEY = "fireBox.penaltyKicks.grade.v1";
+
+function loadStoredGrade() {
+  try {
+    const raw = Number(localStorage.getItem(GRADE_STORAGE_KEY));
+    if (Number.isInteger(raw) && raw >= MIN_GRADE && raw <= MAX_GRADE) return raw;
+  } catch {}
+  return DEFAULT_GRADE;
 }
 
-function generateQuestion(tier) {
-  let a, b, op, answer;
-  if (tier === 1) {
-    op = Math.random() < 0.5 ? "+" : "-";
-    if (op === "+") {
-      a = randInt(1, 10);
-      b = randInt(1, 10);
-      answer = a + b;
-    } else {
-      a = randInt(1, 10);
-      b = randInt(0, a);
-      answer = a - b;
-    }
-  } else if (tier === 2) {
-    const r = Math.random();
-    if (r < 0.4) {
-      op = "+";
-      a = randInt(10, 25);
-      b = randInt(10, 25);
-      answer = a + b;
-    } else if (r < 0.8) {
-      op = "-";
-      a = randInt(10, 25);
-      b = randInt(0, a);
-      answer = a - b;
-    } else {
-      op = "×";
-      a = randInt(2, 5);
-      b = randInt(2, 12);
-      answer = a * b;
-    }
+function storeGrade(grade) {
+  try {
+    localStorage.setItem(GRADE_STORAGE_KEY, String(grade));
+  } catch {}
+}
+
+// Difficulty profile per grade level -- operations and number ranges roughly
+// matching typical grade-school math curricula. Multiplication/division tables
+// widen with grade; division facts are always constructed to divide evenly.
+function gradeProfile(grade) {
+  switch (grade) {
+    case 1:
+      return { ops: ["+", "-"], addMax: 10 };
+    case 2:
+      return { ops: ["+", "-"], addMax: 20 };
+    case 3:
+      return { ops: ["+", "-", "×"], addMax: 100, mulA: [2, 5], mulB: [2, 10] };
+    case 4:
+      return { ops: ["+", "-", "×", "÷"], addMax: 100, mulA: [2, 10], mulB: [2, 10], divDivisor: [2, 10], divQuotient: [2, 10] };
+    case 5:
+      return { ops: ["+", "-", "×", "÷"], addMax: 1000, mulA: [2, 12], mulB: [2, 12], divDivisor: [2, 12], divQuotient: [2, 12] };
+    case 6:
+      return { ops: ["+", "-", "×", "÷"], addMax: 1000, mulA: [11, 20], mulB: [2, 9], divDivisor: [2, 12], divQuotient: [2, 20] };
+    case 7:
+      return { ops: ["+", "-", "×", "÷"], addMax: 5000, mulA: [11, 25], mulB: [11, 25], divDivisor: [2, 20], divQuotient: [2, 30] };
+    default:
+      return { ops: ["+", "-", "×", "÷"], addMax: 10000, mulA: [12, 30], mulB: [12, 30], divDivisor: [2, 25], divQuotient: [2, 40] };
+  }
+}
+
+function generateQuestion(grade) {
+  const p = gradeProfile(grade);
+  const op = p.ops[Math.floor(Math.random() * p.ops.length)];
+  let a, b, answer;
+  if (op === "+") {
+    a = randInt(1, p.addMax);
+    b = randInt(1, p.addMax);
+    answer = a + b;
+  } else if (op === "-") {
+    a = randInt(1, p.addMax);
+    b = randInt(0, a);
+    answer = a - b;
+  } else if (op === "×") {
+    a = randInt(p.mulA[0], p.mulA[1]);
+    b = randInt(p.mulB[0], p.mulB[1]);
+    answer = a * b;
   } else {
-    const r = Math.random();
-    if (r < 0.35) {
-      op = "+";
-      a = randInt(10, 50);
-      b = randInt(10, 50);
-      answer = a + b;
-    } else if (r < 0.7) {
-      op = "-";
-      a = randInt(10, 50);
-      b = randInt(0, a);
-      answer = a - b;
-    } else {
-      op = "×";
-      a = randInt(2, 12);
-      b = randInt(2, 12);
-      answer = a * b;
-    }
+    const divisor = randInt(p.divDivisor[0], p.divDivisor[1]);
+    const quotient = randInt(p.divQuotient[0], p.divQuotient[1]);
+    a = divisor * quotient;
+    b = divisor;
+    answer = quotient;
   }
 
-  const distractorPool = shuffle([-10, -5, -2, -1, 1, 2, 5, 10]);
+  const scale = Math.max(1, Math.round(answer * 0.1));
+  const distractorPool = shuffle([-2 * scale, -scale, -10, -5, -2, -1, 1, 2, 5, 10, scale, 2 * scale]);
   const seen = new Set([answer]);
   const distractors = [];
   for (const off of distractorPool) {
@@ -134,7 +142,7 @@ function generateQuestion(tier) {
   let guard = 0;
   while (distractors.length < 3 && guard < 30) {
     guard += 1;
-    const cand = Math.max(0, answer + randInt(-12, 12));
+    const cand = Math.max(0, answer + randInt(-scale * 2 - 12, scale * 2 + 12));
     if (!seen.has(cand)) {
       seen.add(cand);
       distractors.push(cand);
@@ -360,6 +368,9 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
   let aiKeeperGuess = 1;
   let pendingOutcomeScored = false;
   let pendingOutcomeReason = "goal";
+
+  // ---- math difficulty (persists across sessions via localStorage) ----
+  let selectedGrade = loadStoredGrade();
 
   // ---- multiplayer state ----
   let channel = null;
@@ -913,15 +924,6 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
     ctx.font = "bold 44px system-ui, sans-serif";
     ctx.fillText(question.text, canvas.width / 2, canvas.height * 0.5);
 
-    const barW = canvas.width * 0.5;
-    const barX = canvas.width / 2 - barW / 2;
-    const barY = canvas.height * 0.53;
-    const frac = clamp(phaseTimer / QUESTION_TIME_MS, 0, 1);
-    ctx.fillStyle = "rgba(255,255,255,0.2)";
-    ctx.fillRect(barX, barY, barW, 8);
-    ctx.fillStyle = frac < 0.25 ? "#ef4444" : "#4ade80";
-    ctx.fillRect(barX, barY, barW * frac, 8);
-
     const rects = layoutQuestionButtons(canvas);
     ctx.font = "bold 26px system-ui, sans-serif";
     for (const r of rects) {
@@ -1091,8 +1093,7 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
 
   function startQuestion() {
     phase = "question";
-    phaseTimer = QUESTION_TIME_MS;
-    question = generateQuestion(tierForCounter(mode === "online" ? Math.ceil(kickNumber / 2) : level));
+    question = generateQuestion(selectedGrade);
     zoneIndex = -1;
   }
 
@@ -1161,9 +1162,7 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
 
     switch (phase) {
       case "question":
-        phaseTimer -= stepDt;
-        if (phaseTimer <= 0) submitAnswer(null);
-        return;
+        return; // untimed -- waits for the player to click an answer
       case "skied":
         phaseTimer -= stepDt;
         if (phaseTimer <= 0) resolveOfflineOutcome(false, "wrong-answer");
@@ -1267,11 +1266,8 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
       switch (phase) {
         case "mp-wait-keeper":
         case "aim":
-          return;
         case "question":
-          phaseTimer -= stepDt;
-          if (phaseTimer <= 0) submitAnswer(null);
-          return;
+          return; // question is untimed -- waits for the player to click an answer
         case "skied":
           phaseTimer -= stepDt;
           if (phaseTimer <= 0) resolveWrongAnswerMp();
@@ -1412,14 +1408,28 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
   // ---------------- lobby ----------------
 
   function renderChoiceScreen(overlayEl, onReady, onCancel) {
+    const gradeOptions = [];
+    for (let g = MIN_GRADE; g <= MAX_GRADE; g++) gradeOptions.push(g);
     overlayEl.innerHTML = `
       <h1>Penalty Kicks</h1>
       <p>Answer fast, aim smart, and see if the keeper can guess your corner. Play solo or challenge a friend.</p>
+      <div class="selectRow">
+        <label for="gradeSelect">Math question difficulty:</label>
+        <select id="gradeSelect">
+          ${gradeOptions.map((g) => `<option value="${g}">Grade ${g}${g === MAX_GRADE ? "+" : ""}</option>`).join("")}
+        </select>
+      </div>
       <button data-lobby-action="offline">Play Solo</button>
       <button class="secondary" data-lobby-action="create">Create Private Match</button>
       <button class="secondary" data-lobby-action="join">Join Private Match</button>
       <button class="auth-toggle" type="button" data-lobby-action="cancel">← Back</button>
     `;
+    const gradeSelect = overlayEl.querySelector("#gradeSelect");
+    gradeSelect.value = String(selectedGrade);
+    gradeSelect.addEventListener("change", (e) => {
+      selectedGrade = Number(e.target.value);
+      storeGrade(selectedGrade);
+    });
     overlayEl.querySelector('[data-lobby-action="offline"]').addEventListener("click", () => startOffline(onReady));
     overlayEl.querySelector('[data-lobby-action="create"]').addEventListener("click", () => createMatch(overlayEl, onReady, onCancel));
     overlayEl.querySelector('[data-lobby-action="join"]').addEventListener("click", () => renderJoinScreen(overlayEl, onReady, onCancel));
