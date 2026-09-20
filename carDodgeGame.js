@@ -157,6 +157,7 @@ export function createCarDodgeGame({ canvas, ctx }) {
   let trees = [];
   let speedLines = [];
   let floaters = [];
+  let crash = null; // impact point, drawn as a static explosion on the final frame
   let coins = [];
 
   let elapsed = 0;
@@ -283,6 +284,7 @@ export function createCarDodgeGame({ canvas, ctx }) {
     trees = [];
     speedLines = [];
     floaters = [];
+    crash = null;
     coins = [];
     elapsed = 0;
     score = 0;
@@ -374,6 +376,7 @@ export function createCarDodgeGame({ canvas, ctx }) {
     for (const car of cars) {
       const cBox = carHitbox(car);
       if (boxGap(pBox, cBox) <= 0) {
+        crash = { x: (pBox.cx + cBox.cx) / 2, y: (pBox.cy + cBox.cy) / 2 };
         endGame();
         return;
       }
@@ -545,7 +548,100 @@ export function createCarDodgeGame({ canvas, ctx }) {
     }
 
     for (const car of cars) drawCarSprite(ctx, car.x, car.y, car.def);
+
+    // glowing tail lights on traffic
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (const car of cars) {
+      const sz = carDrawSize(car.def);
+      for (const sx of [-1, 1]) {
+        const lx = car.x + sx * sz.w * 0.3;
+        const ly = car.y + sz.h * 0.44;
+        const glow = ctx.createRadialGradient(lx, ly, 0, lx, ly, 13);
+        glow.addColorStop(0, "rgba(255,60,50,0.75)");
+        glow.addColorStop(1, "rgba(255,60,50,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(lx, ly, 13, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+
+    // player: headlight beams ahead, boost flame behind
+    const pSize = carDrawSize(playerCar);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const beamBase = playerY - pSize.h / 2 + 6;
+    const beamTip = beamBase - 210;
+    const beam = ctx.createLinearGradient(0, beamBase, 0, beamTip);
+    beam.addColorStop(0, "rgba(255,244,205,0.34)");
+    beam.addColorStop(1, "rgba(255,244,205,0)");
+    ctx.fillStyle = beam;
+    ctx.beginPath();
+    ctx.moveTo(playerX - pSize.w * 0.34, beamBase);
+    ctx.lineTo(playerX - pSize.w * 0.95, beamTip);
+    ctx.lineTo(playerX + pSize.w * 0.95, beamTip);
+    ctx.lineTo(playerX + pSize.w * 0.34, beamBase);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    if (boostHeld && !gameOver) {
+      const fl = 26 + Math.random() * 18;
+      const fy = playerY + pSize.h / 2 - 4;
+      for (const sx of [-1, 1]) {
+        const fx0 = playerX + sx * pSize.w * 0.22;
+        const flame = ctx.createLinearGradient(0, fy, 0, fy + fl);
+        flame.addColorStop(0, "rgba(255,240,150,0.95)");
+        flame.addColorStop(0.5, "rgba(251,146,60,0.75)");
+        flame.addColorStop(1, "rgba(239,68,68,0)");
+        ctx.fillStyle = flame;
+        ctx.beginPath();
+        ctx.moveTo(fx0 - 5, fy);
+        ctx.lineTo(fx0 + 5, fy);
+        ctx.lineTo(fx0, fy + fl);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
     drawCarSprite(ctx, playerX, playerY, playerCar);
+
+    if (gameOver && crash) {
+      const cx = crash.x;
+      const cy = crash.y;
+      const fire = ctx.createRadialGradient(cx, cy, 0, cx, cy, 90);
+      fire.addColorStop(0, "rgba(255,255,220,0.95)");
+      fire.addColorStop(0.25, "rgba(253,186,60,0.9)");
+      fire.addColorStop(0.6, "rgba(239,68,68,0.55)");
+      fire.addColorStop(1, "rgba(239,68,68,0)");
+      ctx.fillStyle = fire;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 90, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,240,180,0.9)";
+      for (let i = 0; i < 14; i++) {
+        const a = (Math.PI * 2 * i) / 14;
+        const len = 46 + ((i * 37) % 30);
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(a);
+        ctx.beginPath();
+        ctx.moveTo(18, -3);
+        ctx.lineTo(18 + len, 0);
+        ctx.lineTo(18, 3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      for (let i = 0; i < 10; i++) {
+        const a = (Math.PI * 2 * i) / 10 + 0.3;
+        const d = 60 + ((i * 53) % 40);
+        ctx.fillStyle = i % 2 ? "#475569" : "#fbbf24";
+        ctx.fillRect(cx + Math.cos(a) * d - 3, cy + Math.sin(a) * d - 3, 6, 6);
+      }
+    }
 
     ctx.textAlign = "center";
     ctx.font = "bold 22px system-ui, sans-serif";

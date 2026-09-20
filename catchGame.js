@@ -348,6 +348,18 @@ export function createCatchGame({ canvas, ctx }) {
     ctx.arc(sunX, sunY, 30, 0, Math.PI * 2);
     ctx.fill();
 
+    // slow drifting light motes for a sense of depth
+    const t = performance.now() / 1000;
+    for (let i = 0; i < 26; i++) {
+      const bx = ((i * 97.13) % 1) * w;
+      const mx = (bx + Math.sin(t * 0.3 + i) * 24 + t * (6 + (i % 5) * 2)) % (w + 40);
+      const my = (((i * 61.7) % 1) * h * 0.8 + Math.cos(t * 0.4 + i * 1.7) * 14 + h * 0.05) % h;
+      ctx.fillStyle = `rgba(255,255,255,${0.16 + 0.14 * Math.sin(t * 1.4 + i)})`;
+      ctx.beginPath();
+      ctx.arc(mx, my, 1.6 + (i % 3), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     const hillLayers = [
       { color: "rgba(96,165,214,0.55)", base: h * 0.86, amp: 32, freq: 0.006, phase: 40 },
       { color: "rgba(60,130,190,0.6)", base: h * 0.92, amp: 24, freq: 0.009, phase: 210 },

@@ -1,7 +1,6 @@
 import { POSE, toCanvasCoords } from "./utils.js?v=5";
 import { createRoomChannel, subscribeRoom, closeRoom, countPresence, generateRoomCode } from "./multiplayer.js?v=3";
 
-const BALL_SRC = "Asset/football/PNG/Equipment/ball_soccer1.png";
 const KEEPER_SRC = {
   ready: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_duck.png",
   dive: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_jump.png",
@@ -39,6 +38,106 @@ function shuffle(arr) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+// A crisp football rendered once at high resolution (the tiny Kenney PNG turns
+// blurry when scaled up on a full-resolution canvas). Pentagon patches + seams,
+// spherical shading and a glossy highlight; rotated at draw time for spin.
+function createBallSprite() {
+  const size = 256;
+  const c = document.createElement("canvas");
+  c.width = size;
+  c.height = size;
+  const g = c.getContext("2d");
+  const R = size / 2 - 3;
+  g.translate(size / 2, size / 2);
+
+  g.save();
+  g.beginPath();
+  g.arc(0, 0, R, 0, Math.PI * 2);
+  g.clip();
+
+  const base = g.createRadialGradient(-R * 0.3, -R * 0.35, R * 0.1, 0, 0, R);
+  base.addColorStop(0, "#ffffff");
+  base.addColorStop(0.75, "#eef2f7");
+  base.addColorStop(1, "#c4ccd8");
+  g.fillStyle = base;
+  g.fillRect(-R, -R, R * 2, R * 2);
+
+  function pentagon(cx, cy, r, rot) {
+    g.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = rot + (Math.PI * 2 * i) / 5;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.closePath();
+  }
+
+  const patch = g.createLinearGradient(-R, -R, R, R);
+  patch.addColorStop(0, "#334155");
+  patch.addColorStop(1, "#0b1220");
+  g.fillStyle = patch;
+  g.strokeStyle = "rgba(15,23,42,0.55)";
+  g.lineWidth = 3;
+  g.lineJoin = "round";
+
+  // central patch and five partial patches wrapping around the edge
+  pentagon(0, 0, R * 0.34, -Math.PI / 2);
+  g.fill();
+  const outer = [];
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + (Math.PI * 2 * i) / 5 + Math.PI / 5;
+    const cx = Math.cos(a) * R * 0.98;
+    const cy = Math.sin(a) * R * 0.98;
+    outer.push({ cx, cy, a });
+    pentagon(cx, cy, R * 0.34, a + Math.PI);
+    g.fill();
+  }
+  // seams connecting the central patch to the outer ones
+  g.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const va = -Math.PI / 2 + (Math.PI * 2 * i) / 5;
+    g.moveTo(Math.cos(va) * R * 0.34, Math.sin(va) * R * 0.34);
+    g.lineTo(Math.cos(va) * R * 0.7, Math.sin(va) * R * 0.7);
+  }
+  g.stroke();
+  g.strokeStyle = "rgba(100,116,139,0.35)";
+  g.lineWidth = 2;
+  g.beginPath();
+  for (const o of outer) {
+    const back = o.a + Math.PI;
+    g.moveTo(o.cx + Math.cos(back - 0.6) * R * 0.34, o.cy + Math.sin(back - 0.6) * R * 0.34);
+    g.lineTo(o.cx + Math.cos(back + 0.6) * R * 0.34, o.cy + Math.sin(back + 0.6) * R * 0.34);
+  }
+  g.stroke();
+
+  // sphere shading
+  const shade = g.createRadialGradient(-R * 0.25, -R * 0.3, R * 0.2, 0, 0, R * 1.02);
+  shade.addColorStop(0, "rgba(255,255,255,0)");
+  shade.addColorStop(0.65, "rgba(15,23,42,0.08)");
+  shade.addColorStop(1, "rgba(15,23,42,0.5)");
+  g.fillStyle = shade;
+  g.fillRect(-R, -R, R * 2, R * 2);
+  g.restore();
+
+  // glossy highlight + outline
+  const gloss = g.createRadialGradient(-R * 0.38, -R * 0.42, 0, -R * 0.38, -R * 0.42, R * 0.42);
+  gloss.addColorStop(0, "rgba(255,255,255,0.85)");
+  gloss.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gloss;
+  g.beginPath();
+  g.ellipse(-R * 0.38, -R * 0.42, R * 0.38, R * 0.26, -0.6, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = "rgba(15,23,42,0.75)";
+  g.lineWidth = 4;
+  g.beginPath();
+  g.arc(0, 0, R, 0, Math.PI * 2);
+  g.stroke();
+
+  return { img: c, loaded: true };
 }
 
 function loadSprite(src) {
@@ -314,7 +413,7 @@ function getHandPoint(landmarks, idx, canvasWidth, canvasHeight) {
 }
 
 export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
-  const ballSprite = loadSprite(BALL_SRC);
+  const ballSprite = createBallSprite();
   const keeperSprites = {
     ready: loadSprite(KEEPER_SRC.ready),
     dive: loadSprite(KEEPER_SRC.dive),
@@ -362,6 +461,7 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
   let particles = [];
   let floaters = [];
   let shake = 0;
+  let netRipple = null; // {x, y, age} -- shockwave through the net when a goal goes in
 
   // ---- single-player state ----
   let score, lives, level, shotsThisLevel;
@@ -477,20 +577,56 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
     floaters.push({ x, y, text, color, big, life: 46, maxLife: 46 });
   }
 
+  // celebration when a goal goes in: spinning coloured paper falling under gravity
+  function spawnConfetti(x, y) {
+    const colors = ["#f87171", "#fbbf24", "#4ade80", "#60a5fa", "#c084fc", "#f472b6", "#ffffff"];
+    for (let i = 0; i < 46; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
+      const sp = 3 + Math.random() * 5;
+      particles.push({
+        x,
+        y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        g: 0.16,
+        rect: true,
+        w: 5 + Math.random() * 5,
+        h: 3 + Math.random() * 4,
+        rot: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 0.4,
+        color: colors[i % colors.length],
+        life: 70 + Math.random() * 25,
+        maxLife: 95,
+      });
+    }
+  }
+
   function drawParticlesAndFloaters() {
     for (const p of particles) {
-      ctx.globalAlpha = p.life / p.maxLife;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.globalAlpha = Math.min(1, (p.life / p.maxLife) * 1.6);
       ctx.fillStyle = p.color;
-      ctx.fill();
+      if (p.rect) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.globalAlpha = 1;
     }
+    ctx.lineJoin = "round";
     for (const f of floaters) {
       ctx.globalAlpha = Math.min(1, f.life / 15);
-      ctx.fillStyle = f.color;
-      ctx.font = f.big ? "bold 40px system-ui, sans-serif" : "bold 20px system-ui, sans-serif";
+      ctx.font = f.big ? "bold 44px system-ui, sans-serif" : "bold 20px system-ui, sans-serif";
       ctx.textAlign = "center";
+      ctx.lineWidth = f.big ? 8 : 4;
+      ctx.strokeStyle = "rgba(15,23,42,0.85)";
+      ctx.strokeText(f.text, f.x, f.y);
+      ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
       ctx.globalAlpha = 1;
     }
@@ -527,6 +663,7 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
 
     if (ballSprite.loaded) {
       const d = b.r * 2;
+      ctx.rotate((b.spin) || 0);
       ctx.drawImage(ballSprite.img, -d / 2, -d / 2, d, d);
     } else {
       const ballGrad = ctx.createRadialGradient(-b.r * 0.35, -b.r * 0.35, b.r * 0.1, 0, 0, b.r);
@@ -563,6 +700,7 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
     ball.x = ball.startX + (ball.endX - ball.startX) * t;
     ball.y = ball.startY + (ball.endY - ball.startY) * t;
     ball.r = 22 - 17 * t;
+    ball.spin = t * 11;
   }
 
   function makeKeeperBall(idx) {
@@ -583,6 +721,7 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
     ball.x = ball.startX + (ball.endX - ball.startX) * t;
     ball.y = ball.startY + (ball.endY - ball.startY) * t;
     ball.r = 7 + 17 * t;
+    ball.spin = t * 11;
   }
 
   // ---------------- stadium / pitch / goal (shared stadium, two pitch/goal framings) ----------------
@@ -875,6 +1014,23 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
     ctx.beginPath();
     ctx.ellipse(canvas.width / 2, rect.bottom + 4, (rect.right - rect.left) * 0.5, postW * 2, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    if (netRipple) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(rect.left, rect.top, rect.right - rect.left, innerH);
+      ctx.clip();
+      const a = netRipple.age / 40;
+      for (let i = 0; i < 3; i++) {
+        const rr = (a * 90 + i * 16) * 1.0;
+        ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, 0.55 - a * 0.55 - i * 0.12)})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.ellipse(netRipple.x, netRipple.y, rr, rr * 0.7, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
     drawPost(rect.left - postW, rect.top - postW, postW, innerH + postW * 2);
     drawPost(rect.right, rect.top - postW, postW, innerH + postW * 2);
@@ -1202,6 +1358,8 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
     if (scored) {
       score += 1;
       spawnBurst(pos.x, pos.y, "#4ade80");
+      spawnConfetti(canvas.width / 2, canvas.height * 0.5);
+      netRipple = { x: pos.x, y: pos.y, age: 0 };
       addFloater(pos.x, pos.y - 30, "GOAL!", "#4ade80", true);
       playSound(sfxGoal);
     } else {
@@ -1285,6 +1443,10 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
     const pos = payload.reason === "wrong-answer" || !ball ? { x: canvas.width / 2, y: canvas.height * 0.3 } : { x: ball.endX, y: ball.endY };
     if (payload.scored) {
       spawnBurst(pos.x, pos.y, "#4ade80");
+      if (role === "shooter") {
+        spawnConfetti(canvas.width / 2, canvas.height * 0.5);
+        netRipple = { x: pos.x, y: pos.y, age: 0 };
+      }
       addFloater(pos.x, pos.y - 30, role === "shooter" ? "GOAL!" : "CONCEDED!", "#4ade80", true);
       playSound(sfxGoal);
     } else {
@@ -1470,29 +1632,46 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
 
   // ---------------- lobby ----------------
 
+  function gradeLabel(g) {
+    return `Grade ${g}${g === MAX_GRADE ? "+" : ""}`;
+  }
+
+  // First thing the player sees: which grade are they in? Questions match it.
+  function renderGradeScreen(overlayEl, onReady, onCancel) {
+    const buttons = [];
+    for (let g = MIN_GRADE; g <= MAX_GRADE; g++) {
+      buttons.push(
+        `<button type="button" class="${g === selectedGrade ? "" : "secondary"}" data-grade="${g}" style="min-width:0;padding:16px 8px;font-size:1.05rem;">${gradeLabel(g)}</button>`
+      );
+    }
+    overlayEl.innerHTML = `
+      <h1>Penalty Kicks</h1>
+      <p style="margin:0;"><strong style="color:#f8fafc;font-size:1.35rem;">What grade are you in?</strong><br />Your math questions will match your grade.</p>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;width:min(460px,92vw);">${buttons.join("")}</div>
+      <button class="auth-toggle" type="button" data-lobby-action="cancel">← Back</button>
+    `;
+    overlayEl.querySelectorAll("[data-grade]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        selectedGrade = Number(btn.dataset.grade);
+        storeGrade(selectedGrade);
+        renderChoiceScreen(overlayEl, onReady, onCancel);
+      });
+    });
+    overlayEl.querySelector('[data-lobby-action="cancel"]').addEventListener("click", onCancel);
+  }
+
   function renderChoiceScreen(overlayEl, onReady, onCancel) {
-    const gradeOptions = [];
-    for (let g = MIN_GRADE; g <= MAX_GRADE; g++) gradeOptions.push(g);
     overlayEl.innerHTML = `
       <h1>Penalty Kicks</h1>
       <p>Answer fast, aim smart, and see if the keeper can guess your corner. Play solo or challenge a friend.</p>
-      <div class="selectRow">
-        <label for="gradeSelect">Math question difficulty:</label>
-        <select id="gradeSelect">
-          ${gradeOptions.map((g) => `<option value="${g}">Grade ${g}${g === MAX_GRADE ? "+" : ""}</option>`).join("")}
-        </select>
-      </div>
+      <p style="margin:0;color:#94a3b8;">Math level: <strong style="color:#f8fafc;">${gradeLabel(selectedGrade)}</strong></p>
       <button data-lobby-action="offline">Play Solo</button>
       <button class="secondary" data-lobby-action="create">Create Private Match</button>
       <button class="secondary" data-lobby-action="join">Join Private Match</button>
+      <button class="auth-toggle" type="button" data-lobby-action="change-grade">Change grade</button>
       <button class="auth-toggle" type="button" data-lobby-action="cancel">← Back</button>
     `;
-    const gradeSelect = overlayEl.querySelector("#gradeSelect");
-    gradeSelect.value = String(selectedGrade);
-    gradeSelect.addEventListener("change", (e) => {
-      selectedGrade = Number(e.target.value);
-      storeGrade(selectedGrade);
-    });
+    overlayEl.querySelector('[data-lobby-action="change-grade"]').addEventListener("click", () => renderGradeScreen(overlayEl, onReady, onCancel));
     overlayEl.querySelector('[data-lobby-action="offline"]').addEventListener("click", () => startOffline(onReady));
     overlayEl.querySelector('[data-lobby-action="create"]').addEventListener("click", () => createMatch(overlayEl, onReady, onCancel));
     overlayEl.querySelector('[data-lobby-action="join"]').addEventListener("click", () => renderJoinScreen(overlayEl, onReady, onCancel));
@@ -1622,7 +1801,7 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
     pendingOnReady = null;
     roomCode = null;
     opponentId = null;
-    renderChoiceScreen(overlayEl, onReady, onCancel);
+    renderGradeScreen(overlayEl, onReady, onCancel);
   }
 
   // ---------------- lifecycle ----------------
@@ -1631,6 +1810,7 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
     particles = [];
     floaters = [];
     shake = 0;
+    netRipple = null;
     zoneIndex = -1;
     ball = null;
     handsReady = false;
@@ -1670,7 +1850,13 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
     for (const p of particles) {
       p.x += p.vx;
       p.y += p.vy;
+      if (p.g) p.vy += p.g;
+      if (p.vr) p.rot += p.vr;
       p.life -= 1;
+    }
+    if (netRipple) {
+      netRipple.age += 1;
+      if (netRipple.age > 40) netRipple = null;
     }
     particles = particles.filter((p) => p.life > 0);
     for (const f of floaters) {

@@ -51,6 +51,9 @@ export function createWhackGame({ canvas, ctx }) {
   let holes = [];
   let floaters = [];
   let sparks = [];
+  let stunned = []; // critters just whacked: dizzy for a beat, sinking back down
+  let rings = [];
+  let mallet = { x: 0, y: 0, visible: false, swing: 0 };
   let coins = 0;
   let best = loadBest();
   let timeLeft = SESSION_SECONDS;
@@ -95,11 +98,17 @@ export function createWhackGame({ canvas, ctx }) {
   function handleClick(clientX, clientY) {
     if (gameOver) return;
     const { x, y } = toCanvasCoords(clientX, clientY);
+    mallet.x = x;
+    mallet.y = y;
+    mallet.visible = true;
+    mallet.swing = 1;
     for (const hole of holes) {
       const dx = x - hole.x;
       const dy = y - hole.y;
       if (dx * dx + dy * dy <= HOLE_RADIUS * HOLE_RADIUS && hole.active) {
         hole.active = false;
+        stunned.push({ x: hole.x, y: hole.y + 10, critter: hole.critter, t: 0 });
+        rings.push({ x: hole.x, y: hole.y - 4, t: 0 });
         coins += COINS_PER_HIT;
         floaters.push({ x: hole.x, y: hole.y - 20, life: 0.7, maxLife: 0.7 });
         for (let i = 0; i < 10; i++) {
@@ -112,12 +121,22 @@ export function createWhackGame({ canvas, ctx }) {
     }
   }
 
+  canvas.addEventListener("pointermove", (e) => {
+    if (gameOver) return;
+    const p = toCanvasCoords(e.clientX, e.clientY);
+    mallet.x = p.x;
+    mallet.y = p.y;
+    mallet.visible = true;
+  });
   canvas.addEventListener("pointerdown", (e) => handleClick(e.clientX, e.clientY));
 
   function reset() {
     holes = computeHoles();
     floaters = [];
     sparks = [];
+    stunned = [];
+    rings = [];
+    mallet.swing = 0;
     coins = 0;
     timeLeft = SESSION_SECONDS;
     spawnTimer = 0.5;
@@ -177,6 +196,11 @@ export function createWhackGame({ canvas, ctx }) {
       f.y -= 40 * dtSec;
       return f.life > 0;
     });
+    for (const st of stunned) st.t += dtSec;
+    stunned = stunned.filter((st) => st.t < 0.42);
+    for (const r of rings) r.t += dtSec;
+    rings = rings.filter((r) => r.t < 0.35);
+    mallet.swing = Math.max(0, mallet.swing - dtSec * 5);
     sparks = sparks.filter((p) => {
       p.life -= dtSec;
       p.x += p.vx * dtSec;
@@ -339,6 +363,56 @@ export function createWhackGame({ canvas, ctx }) {
     // back rows first so lower holes overlap upper ones naturally
     for (const hole of holes) drawHole(hole);
 
+    // whacked critters: squashed, dizzy stars circling, sinking back into the hole
+    for (const st of stunned) {
+      const sprite = critterSprites[st.critter];
+      const rx = HOLE_RADIUS;
+      const ry = HOLE_RADIUS * 0.55;
+      const sink = Math.min(1, st.t / 0.42);
+      const s = HOLE_RADIUS * 1.6;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(st.x - rx * 2, st.y - 400, rx * 4, 400);
+      ctx.ellipse(st.x, st.y, rx, ry, 0, 0, Math.PI * 2);
+      ctx.clip();
+      if (sprite.loaded) {
+        const squash = 0.72 + 0.28 * sink;
+        ctx.translate(st.x, st.y - s * 0.78 + sink * s * 0.95 + s);
+        ctx.scale(1.25 - 0.25 * sink, squash);
+        ctx.drawImage(sprite.img, -s / 2, -s, s, s);
+      }
+      ctx.restore();
+      if (sink < 0.85) {
+        for (let k = 0; k < 3; k++) {
+          const a = st.t * 12 + (Math.PI * 2 * k) / 3;
+          const sx = st.x + Math.cos(a) * 26;
+          const sy = st.y - s * 0.72 + Math.sin(a) * 8;
+          ctx.fillStyle = "#fde047";
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.rotate(a);
+          ctx.beginPath();
+          for (let i = 0; i < 5; i++) {
+            const ang = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+            ctx.lineTo(Math.cos(ang) * 6, Math.sin(ang) * 6);
+            ctx.lineTo(Math.cos(ang + Math.PI / 5) * 2.6, Math.sin(ang + Math.PI / 5) * 2.6);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+    }
+
+    for (const r of rings) {
+      const a = 1 - r.t / 0.35;
+      ctx.strokeStyle = `rgba(255,255,255,${a * 0.8})`;
+      ctx.lineWidth = 4 * a + 1;
+      ctx.beginPath();
+      ctx.ellipse(r.x, r.y, 20 + r.t * 130, 12 + r.t * 80, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     for (const p of sparks) {
       ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
       ctx.fillStyle = "#fde047";
@@ -347,6 +421,39 @@ export function createWhackGame({ canvas, ctx }) {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+
+    if (mallet.visible && !gameOver) {
+      const sw = mallet.swing;
+      const angle = -0.6 + sw * 1.0; // raised at rest, swings through on a click
+      ctx.save();
+      ctx.translate(mallet.x, mallet.y);
+      ctx.rotate(angle);
+      // handle
+      const wood = ctx.createLinearGradient(-6, 0, 6, 0);
+      wood.addColorStop(0, "#b7793a");
+      wood.addColorStop(0.5, "#d9a066");
+      wood.addColorStop(1, "#8a5a2b");
+      ctx.fillStyle = wood;
+      ctx.beginPath();
+      ctx.roundRect(-6, 14, 12, 76, 5);
+      ctx.fill();
+      // head
+      const head = ctx.createLinearGradient(-30, 0, 30, 0);
+      head.addColorStop(0, "#9a6a3a");
+      head.addColorStop(0.5, "#e2ad72");
+      head.addColorStop(1, "#7d4f24");
+      ctx.fillStyle = head;
+      ctx.strokeStyle = "rgba(60,30,10,0.85)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(-30, -20, 60, 40, 10);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#4b5563";
+      ctx.fillRect(-30, -10, 60, 5);
+      ctx.fillRect(-30, 4, 60, 5);
+      ctx.restore();
+    }
 
     ctx.font = "bold 28px system-ui, sans-serif";
     ctx.textAlign = "center";

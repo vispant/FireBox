@@ -123,6 +123,8 @@ export function createRunnerGame({ canvas, ctx }) {
   let playerVelY = 0;
   let ducking = false;
   let grounded = true;
+  let dust = [];
+  let dustTimer = 0;
   let runFrame = 0;
   let runFrameTimer = 0;
 
@@ -223,6 +225,8 @@ export function createRunnerGame({ canvas, ctx }) {
     playerVelY = 0;
     ducking = false;
     grounded = true;
+    dust = [];
+    dustTimer = 0;
     runFrame = 0;
     runFrameTimer = 0;
     obstacles = [];
@@ -273,10 +277,27 @@ export function createRunnerGame({ canvas, ctx }) {
     playerVelY -= GRAVITY * dtSec;
     playerHeight += playerVelY * dtSec;
     if (playerHeight <= 0) {
+      if (!grounded) {
+        for (let i = 0; i < 7; i++) {
+          dust.push({ x: canvas.width * PLAYER_X_RATIO + (Math.random() - 0.5) * 30, y: groundY(), vx: (Math.random() - 0.5) * 120 - speed * 0.15, vy: -20 - Math.random() * 40, life: 0.45, max: 0.45, r: 3 + Math.random() * 4 });
+        }
+      }
       playerHeight = 0;
       playerVelY = 0;
       grounded = true;
     }
+
+    dustTimer -= dtSec;
+    if (grounded && !ducking && dustTimer <= 0) {
+      dustTimer = 0.09;
+      dust.push({ x: canvas.width * PLAYER_X_RATIO - 14, y: groundY(), vx: -speed * 0.25 - Math.random() * 30, vy: -10 - Math.random() * 25, life: 0.4, max: 0.4, r: 2.5 + Math.random() * 3 });
+    }
+    for (const d of dust) {
+      d.x += d.vx * dtSec;
+      d.y += d.vy * dtSec;
+      d.life -= dtSec;
+    }
+    dust = dust.filter((d) => d.life > 0);
 
     if (grounded && !ducking) {
       runFrameTimer -= dtSec;
@@ -419,39 +440,83 @@ export function createRunnerGame({ canvas, ctx }) {
     return x - Math.floor(x);
   }
 
+  const SKY_PALETTES = [
+    { top: [94, 180, 240], mid: [169, 220, 247], bot: [207, 233, 248], sun: [255, 250, 214], night: 0 }, // day
+    { top: [62, 74, 150], mid: [240, 138, 106], bot: [251, 211, 141], sun: [255, 190, 130], night: 0.12 }, // dusk
+    { top: [10, 16, 44], mid: [27, 42, 90], bot: [58, 74, 122], sun: [230, 236, 255], night: 0.5 }, // night
+    { top: [88, 96, 170], mid: [244, 160, 150], bot: [253, 226, 170], sun: [255, 214, 160], night: 0.1 }, // dawn
+  ];
+
+  function skyState() {
+    const cycle = (distanceScore / 700) % SKY_PALETTES.length;
+    const i = Math.floor(cycle);
+    const f = cycle - i;
+    const k = f < 0.55 ? 0 : (f - 0.55) / 0.45; // hold each palette for a while, then blend to the next
+    const A = SKY_PALETTES[i];
+    const B = SKY_PALETTES[(i + 1) % SKY_PALETTES.length];
+    const mix = (x, y) => Math.round(x + (y - x) * k);
+    const col = (key) => `rgb(${mix(A[key][0], B[key][0])},${mix(A[key][1], B[key][1])},${mix(A[key][2], B[key][2])})`;
+    return { top: col("top"), mid: col("mid"), bot: col("bot"), sun: col("sun"), night: A.night + (B.night - A.night) * k };
+  }
+
   function drawSkyBackdrop() {
     const w = canvas.width;
     const h = canvas.height;
     const gy = groundY();
+    const sky = skyState();
     const grad = ctx.createLinearGradient(0, 0, 0, gy);
-    grad.addColorStop(0, "#5eb4f0");
-    grad.addColorStop(0.6, "#a9dcf7");
-    grad.addColorStop(1, "#cfe9f8");
+    grad.addColorStop(0, sky.top);
+    grad.addColorStop(0.6, sky.mid);
+    grad.addColorStop(1, sky.bot);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
-    // sun + halo
+    // stars fade in as it gets dark
+    if (sky.night > 0.15) {
+      const t = performance.now() / 1000;
+      const alpha = Math.min(1, (sky.night - 0.15) / 0.3);
+      for (let i = 0; i < 60; i++) {
+        const x = rand01(i * 3.1) * w;
+        const y = rand01(i * 7.3 + 2) * gy * 0.7;
+        const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * (0.8 + rand01(i) * 1.5) + i));
+        ctx.fillStyle = `rgba(255,255,255,${alpha * tw * 0.9})`;
+        ctx.beginPath();
+        ctx.arc(x, y, 0.9 + rand01(i * 2.2) * 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // sun (or moon at night) with a halo
     const sx = w * 0.78;
-    const sy = gy * 0.28;
+    const sy = gy * 0.28 + sky.night * gy * 0.05;
     const halo = ctx.createRadialGradient(sx, sy, 0, sx, sy, gy * 0.7);
-    halo.addColorStop(0, "rgba(255,246,196,0.85)");
-    halo.addColorStop(0.3, "rgba(255,240,170,0.28)");
+    halo.addColorStop(0, "rgba(255,246,196,0.7)");
+    halo.addColorStop(0.3, "rgba(255,240,170,0.22)");
     halo.addColorStop(1, "rgba(255,240,170,0)");
+    ctx.globalAlpha = 1 - sky.night * 0.9;
     ctx.fillStyle = halo;
     ctx.fillRect(0, 0, w, gy);
-    ctx.fillStyle = "#fffbd6";
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = sky.sun;
     ctx.beginPath();
     ctx.arc(sx, sy, 26, 0, Math.PI * 2);
     ctx.fill();
+    if (sky.night > 0.3) {
+      ctx.fillStyle = "rgba(20,30,70,0.35)";
+      ctx.beginPath();
+      ctx.arc(sx + 9, sy - 4, 22, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // slow parallax clouds built from overlapping circles
     const drift = hillScrollX * 0.18;
+    const cloudA = 0.8 - sky.night * 0.5;
     for (let i = 0; i < 6; i++) {
       const span = w + 320;
       const cx = (((rand01(i * 3.3) * span - drift * (0.6 + rand01(i) * 0.5)) % span) + span) % span - 160;
       const cy = 40 + rand01(i * 8.1) * gy * 0.42;
       const sc = 0.7 + rand01(i * 2.7) * 0.7;
-      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.fillStyle = `rgba(255,255,255,${cloudA})`;
       ctx.beginPath();
       ctx.arc(cx, cy, 20 * sc, 0, Math.PI * 2);
       ctx.arc(cx + 24 * sc, cy - 10 * sc, 26 * sc, 0, Math.PI * 2);
@@ -544,6 +609,12 @@ export function createRunnerGame({ canvas, ctx }) {
 
     drawTrees();
 
+    const nightAmt = skyState().night;
+    if (nightAmt > 0.02) {
+      ctx.fillStyle = `rgba(8,16,52,${nightAmt * 0.5})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
     for (const o of obstacles) {
       if (!o.overhead) drawShadow(o.x + o.width / 2, o.width * 1.1, 0.28);
     }
@@ -584,6 +655,14 @@ export function createRunnerGame({ canvas, ctx }) {
     const lift = Math.max(0, groundY() - box.bottom);
     drawShadow((box.left + box.right) / 2, 46 * Math.max(0.5, 1 - lift / 260), Math.max(0.1, 0.32 - lift / 700));
     drawPlayer(box);
+
+    for (const d of dust) {
+      const a = Math.max(0, d.life / d.max);
+      ctx.fillStyle = `rgba(226,214,190,${0.55 * a})`;
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r * (1.4 - a * 0.5), 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   function isOver() {

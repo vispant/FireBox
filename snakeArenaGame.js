@@ -782,6 +782,16 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+    if (highlight) {
+      ctx.lineWidth = 46;
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.14;
+      ctx.stroke(path);
+      ctx.lineWidth = 34;
+      ctx.globalAlpha = 0.16;
+      ctx.stroke(path);
+      ctx.globalAlpha = 1;
+    }
     ctx.lineWidth = 24;
     ctx.strokeStyle = shadeHex(color, -85);
     ctx.stroke(path);

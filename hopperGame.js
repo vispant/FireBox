@@ -136,6 +136,7 @@ export function createHopperGame({ canvas, ctx }) {
   let gameOver = true;
   let leftHeld = false;
   let rightHeld = false;
+  let fx = []; // dust puffs and coin sparkles (world coordinates)
 
   window.addEventListener("keydown", (e) => {
     if (gameOver) return;
@@ -146,6 +147,20 @@ export function createHopperGame({ canvas, ctx }) {
     if (e.code === "ArrowLeft" || e.code === "KeyA") leftHeld = false;
     if (e.code === "ArrowRight" || e.code === "KeyD") rightHeld = false;
   });
+
+  function puff(x, y) {
+    for (let i = 0; i < 9; i++) {
+      fx.push({ x: x + (Math.random() - 0.5) * 30, y, vx: (Math.random() - 0.5) * 150, vy: -10 - Math.random() * 50, life: 0.5, max: 0.5, r: 3 + Math.random() * 4, color: "255,255,255", g: 40 });
+    }
+  }
+
+  function sparkle(x, y) {
+    for (let i = 0; i < 12; i++) {
+      const a = (Math.PI * 2 * i) / 12;
+      const sp = 60 + Math.random() * 90;
+      fx.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.5, max: 0.5, r: 2.5 + Math.random() * 2, color: "253,224,71", g: 120 });
+    }
+  }
 
   function platformWidth() {
     return Math.max(PLATFORM_WIDTH_MIN, PLATFORM_WIDTH_BASE - Math.min(score, 400) * 0.05 + saveData.wideLevel * 12);
@@ -223,6 +238,7 @@ export function createHopperGame({ canvas, ctx }) {
     leftHeld = false;
     rightHeld = false;
     gameOver = false;
+    fx = [];
   }
 
   function endGame() {
@@ -274,6 +290,7 @@ export function createHopperGame({ canvas, ctx }) {
         ) {
           velY = -BOUNCE_VELOCITY;
           squash = 1.5;
+          puff(charX, p.y);
           break;
         }
       }
@@ -284,8 +301,17 @@ export function createHopperGame({ canvas, ctx }) {
       if (Math.hypot(charX - c.x, charY - c.y) < CHARACTER_RADIUS * 0.7 + COIN_RADIUS) {
         c.taken = true;
         runCoins += COIN_VALUE;
+        sparkle(c.x, c.y);
       }
     }
+
+    for (const p of fx) {
+      p.x += p.vx * dtSec;
+      p.y += p.vy * dtSec;
+      p.vy += p.g * dtSec;
+      p.life -= dtSec;
+    }
+    fx = fx.filter((p) => p.life > 0);
 
     squash += (1 - squash) * Math.min(1, dtSec * 6);
 
@@ -370,6 +396,91 @@ export function createHopperGame({ canvas, ctx }) {
     }
   }
 
+  function rand01(n) {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  function drawStars(climbT) {
+    if (climbT < 0.3) return;
+    const alpha = Math.min(1, (climbT - 0.3) / 0.4);
+    const t = performance.now() / 1000;
+    for (let i = 0; i < 70; i++) {
+      const x = rand01(i * 2.7) * canvas.width;
+      const y = (((rand01(i * 6.1) * canvas.height * 1.4 - cameraY * 0.06) % (canvas.height * 1.4)) + canvas.height * 1.4) % (canvas.height * 1.4);
+      const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * (0.7 + rand01(i) * 1.6) + i));
+      ctx.fillStyle = `rgba(255,255,255,${alpha * tw * 0.85})`;
+      ctx.beginPath();
+      ctx.arc(x, y, 0.8 + rand01(i * 1.3) * 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawPlatform(p, y) {
+    const w = p.width;
+    const h = Math.max(PLATFORM_HEIGHT + 14, w * 0.36);
+    // soft cast shadow underneath
+    ctx.fillStyle = "rgba(20,40,80,0.18)";
+    ctx.beginPath();
+    ctx.ellipse(p.x + w / 2, y + h + 4, w * 0.42, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // earth body with a rounded, tapering underside
+    const earth = ctx.createLinearGradient(0, y, 0, y + h);
+    earth.addColorStop(0, "#c98d54");
+    earth.addColorStop(1, "#8a5a30");
+    ctx.fillStyle = earth;
+    ctx.beginPath();
+    ctx.moveTo(p.x, y + 6);
+    ctx.lineTo(p.x + w, y + 6);
+    ctx.quadraticCurveTo(p.x + w * 0.98, y + h * 0.8, p.x + w * 0.78, y + h);
+    ctx.lineTo(p.x + w * 0.22, y + h);
+    ctx.quadraticCurveTo(p.x + w * 0.02, y + h * 0.8, p.x, y + 6);
+    ctx.closePath();
+    ctx.fill();
+    // strata lines
+    ctx.strokeStyle = "rgba(90,50,20,0.28)";
+    ctx.lineWidth = 2;
+    for (let i = 1; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(p.x + w * 0.08, y + 6 + i * (h - 6) * 0.3);
+      ctx.bezierCurveTo(p.x + w * 0.35, y + 3 + i * (h - 6) * 0.3, p.x + w * 0.65, y + 9 + i * (h - 6) * 0.3, p.x + w * 0.92, y + 6 + i * (h - 6) * 0.3);
+      ctx.stroke();
+    }
+    // grass cap with a scalloped lower edge
+    const grass = ctx.createLinearGradient(0, y - 4, 0, y + 14);
+    grass.addColorStop(0, "#5fe06a");
+    grass.addColorStop(1, "#2fae4a");
+    ctx.fillStyle = grass;
+    ctx.beginPath();
+    ctx.moveTo(p.x - 2, y - 2);
+    ctx.lineTo(p.x + w + 2, y - 2);
+    ctx.lineTo(p.x + w + 2, y + 9);
+    const bumps = Math.max(4, Math.round(w / 18));
+    ctx.lineTo(p.x + w, y + 9);
+    for (let i = bumps; i >= 1; i--) {
+      const bx = p.x + (w * i) / bumps;
+      const nx = p.x + (w * (i - 1)) / bumps;
+      ctx.quadraticCurveTo((bx + nx) / 2, y + 17, nx, y + 9);
+    }
+    ctx.lineTo(p.x - 2, y + 9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.32)";
+    ctx.fillRect(p.x + 4, y - 1, w - 8, 3);
+    // tiny flowers/blades
+    ctx.strokeStyle = "#1f8a3a";
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < Math.floor(w / 22); i++) {
+      const gx = p.x + 10 + i * 22 + rand01(p.x + i) * 6;
+      ctx.beginPath();
+      ctx.moveTo(gx, y);
+      ctx.lineTo(gx - 2, y - 6);
+      ctx.moveTo(gx + 3, y);
+      ctx.lineTo(gx + 4, y - 7);
+      ctx.stroke();
+    }
+  }
+
   function draw() {
     const climbT = Math.min(1, score / 600);
     const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -378,6 +489,7 @@ export function createHopperGame({ canvas, ctx }) {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    drawStars(climbT);
     drawSun();
     drawClouds();
     drawGroundScene();
@@ -385,24 +497,25 @@ export function createHopperGame({ canvas, ctx }) {
     for (const p of platforms) {
       const y = p.y - cameraY;
       if (y < -80 || y > canvas.height + 80) continue;
-      if (platformSprite.loaded) {
-        const h = p.width * (platformSprite.img.naturalHeight / platformSprite.img.naturalWidth);
-        ctx.drawImage(platformSprite.img, p.x, y, p.width, h);
-      } else {
-        ctx.fillStyle = "#4ade80";
-        ctx.fillRect(p.x, y, p.width, PLATFORM_HEIGHT);
-        ctx.fillStyle = "rgba(255,255,255,0.25)";
-        ctx.fillRect(p.x, y, p.width, 4);
-      }
+      drawPlatform(p, y);
     }
 
+    const spin0 = performance.now() / 300;
     for (const c of coins) {
       if (c.taken) continue;
       const y = c.y - cameraY;
-      if (y < -20 || y > canvas.height + 20) continue;
+      if (y < -30 || y > canvas.height + 30) continue;
+      const halo = ctx.createRadialGradient(c.x, y, 0, c.x, y, COIN_RADIUS * 2.4);
+      halo.addColorStop(0, "rgba(255,225,90,0.5)");
+      halo.addColorStop(1, "rgba(255,225,90,0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(c.x, y, COIN_RADIUS * 2.4, 0, Math.PI * 2);
+      ctx.fill();
       if (coinSprite.loaded) {
         const s = COIN_RADIUS * 2.4;
-        ctx.drawImage(coinSprite.img, c.x - s / 2, y - s / 2, s, s);
+        const spin = Math.max(0.3, Math.abs(Math.cos(spin0 + c.x * 0.02)));
+        ctx.drawImage(coinSprite.img, c.x - (s * spin) / 2, y - s / 2, s * spin, s);
       } else {
         ctx.fillStyle = "#fbbf24";
         ctx.beginPath();
@@ -410,6 +523,15 @@ export function createHopperGame({ canvas, ctx }) {
         ctx.fill();
       }
     }
+
+    for (const p of fx) {
+      ctx.globalAlpha = Math.max(0, p.life / p.max);
+      ctx.fillStyle = `rgb(${p.color})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - cameraY, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
 
     drawCharacter();
   }

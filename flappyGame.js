@@ -252,58 +252,127 @@ export function createFlappyGame({ canvas, ctx }) {
     }
   }
 
+  // A crisp castle tower drawn in local coordinates: the roof tip sits at (0,0)
+  // and the tower extends toward +y (flip the context to hang it from the ceiling).
+  function drawTower(w, length) {
+    const coneH = w * 0.95;
+    const ledgeH = 12;
+    const bodyTop = coneH + ledgeH;
+
+    // shaft: stone gradient with mortar courses and a highlight strip
+    const shaft = ctx.createLinearGradient(0, 0, w, 0);
+    shaft.addColorStop(0, "#c3ced4");
+    shaft.addColorStop(0.42, "#9aa9b1");
+    shaft.addColorStop(1, "#6b7d86");
+    ctx.fillStyle = shaft;
+    ctx.fillRect(w * 0.08, bodyTop, w * 0.84, length);
+    ctx.strokeStyle = "rgba(38,54,62,0.3)";
+    ctx.lineWidth = 1.5;
+    for (let y = bodyTop + 22; y < bodyTop + length; y += 22) {
+      ctx.beginPath();
+      ctx.moveTo(w * 0.08, y);
+      ctx.lineTo(w * 0.92, y);
+      ctx.stroke();
+      const off = (Math.round(y / 22) % 2) * (w * 0.2);
+      ctx.beginPath();
+      ctx.moveTo(w * 0.3 + off, y - 22);
+      ctx.lineTo(w * 0.3 + off, y);
+      ctx.moveTo(w * 0.62 + off * 0.5, y - 22);
+      ctx.lineTo(w * 0.62 + off * 0.5, y);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    ctx.fillRect(w * 0.12, bodyTop, w * 0.07, length);
+    ctx.fillStyle = "rgba(0,0,0,0.16)";
+    ctx.fillRect(w * 0.84, bodyTop, w * 0.08, length);
+
+    // arched window
+    ctx.fillStyle = "#3a4a52";
+    ctx.beginPath();
+    ctx.moveTo(w * 0.4, bodyTop + 62);
+    ctx.lineTo(w * 0.4, bodyTop + 38);
+    ctx.arc(w * 0.5, bodyTop + 38, w * 0.1, Math.PI, 0);
+    ctx.lineTo(w * 0.6, bodyTop + 62);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,220,140,0.55)";
+    ctx.fillRect(w * 0.44, bodyTop + 46, w * 0.12, 14);
+
+    // stone ledge under the roof
+    const ledge = ctx.createLinearGradient(0, coneH, 0, coneH + ledgeH);
+    ledge.addColorStop(0, "#d3dde2");
+    ledge.addColorStop(1, "#8697a0");
+    ctx.fillStyle = ledge;
+    ctx.beginPath();
+    ctx.roundRect(-w * 0.04, coneH, w * 1.08, ledgeH, 3);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(38,54,62,0.5)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // conical terracotta roof with tile rows
+    const roof = ctx.createLinearGradient(0, 0, w, 0);
+    roof.addColorStop(0, "#e2885e");
+    roof.addColorStop(0.5, "#cf6a3f");
+    roof.addColorStop(1, "#9f4a2a");
+    ctx.fillStyle = roof;
+    ctx.beginPath();
+    ctx.moveTo(w / 2, 0);
+    ctx.lineTo(w * 1.02, coneH);
+    ctx.lineTo(-w * 0.02, coneH);
+    ctx.closePath();
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.strokeStyle = "rgba(90,35,15,0.35)";
+    ctx.lineWidth = 1.5;
+    for (let y = 10; y < coneH; y += 11) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.strokeStyle = "rgba(80,30,10,0.55)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(w / 2, 0);
+    ctx.lineTo(w * 1.02, coneH);
+    ctx.lineTo(-w * 0.02, coneH);
+    ctx.closePath();
+    ctx.stroke();
+    // little flag on the tip
+    ctx.strokeStyle = "#5b3a24";
+    ctx.beginPath();
+    ctx.moveTo(w / 2, 0);
+    ctx.lineTo(w / 2, -12);
+    ctx.stroke();
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.moveTo(w / 2, -12);
+    ctx.lineTo(w / 2 + 12, -8);
+    ctx.lineTo(w / 2, -4);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   function drawPipe(pipe) {
     const gapTop = pipe.gapCenter - PIPE_GAP / 2;
     const gapBottom = pipe.gapCenter + PIPE_GAP / 2;
     const w = PIPE_WIDTH;
 
-    // stone shaft with side shading and brick courses, matching the tower sprite
-    function shaft(y0, y1) {
-      if (y1 <= y0) return;
-      const g = ctx.createLinearGradient(pipe.x, 0, pipe.x + w, 0);
-      g.addColorStop(0, "#b2c0c6");
-      g.addColorStop(0.45, "#94a3ab");
-      g.addColorStop(1, "#6f8088");
-      ctx.fillStyle = g;
-      ctx.fillRect(pipe.x + 3, y0, w - 6, y1 - y0);
-      ctx.strokeStyle = "rgba(40,55,62,0.28)";
-      ctx.lineWidth = 1;
-      const start = Math.floor(y0 / 26) * 26;
-      for (let y = start; y < y1; y += 26) {
-        if (y < y0) continue;
-        ctx.beginPath();
-        ctx.moveTo(pipe.x + 3, y);
-        ctx.lineTo(pipe.x + w - 3, y);
-        ctx.stroke();
-        const off = ((y / 26) % 2) * (w / 4);
-        ctx.beginPath();
-        ctx.moveTo(pipe.x + w / 2 + off - w / 8, y);
-        ctx.lineTo(pipe.x + w / 2 + off - w / 8, Math.min(y + 26, y1));
-        ctx.stroke();
-      }
-      ctx.fillStyle = "rgba(255,255,255,0.18)";
-      ctx.fillRect(pipe.x + 5, y0, 4, y1 - y0);
-    }
+    // lower tower: roof tip points up into the gap
+    ctx.save();
+    ctx.translate(pipe.x, gapBottom);
+    drawTower(w, canvas.height);
+    ctx.restore();
 
-    if (towerSprite.loaded) {
-      const h = w * (towerSprite.img.naturalHeight / towerSprite.img.naturalWidth);
-
-      const bottomShaftTop = gapBottom + h * PIPE_CAP_OVERLAP;
-      shaft(bottomShaftTop, canvas.height);
-      ctx.drawImage(towerSprite.img, pipe.x, gapBottom, w, h);
-
-      const topShaftBottom = gapTop - h * PIPE_CAP_OVERLAP;
-      shaft(0, topShaftBottom);
-      ctx.save();
-      ctx.translate(pipe.x, gapTop);
-      ctx.scale(1, -1);
-      ctx.drawImage(towerSprite.img, 0, 0, w, h);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = "#22c55e";
-      ctx.fillRect(pipe.x, 0, w, gapTop);
-      ctx.fillRect(pipe.x, gapBottom, w, canvas.height - gapBottom);
-    }
+    // upper tower: hangs from the ceiling, roof tip pointing down into the gap
+    ctx.save();
+    ctx.translate(pipe.x, gapTop);
+    ctx.scale(1, -1);
+    drawTower(w, canvas.height);
+    ctx.restore();
   }
 
   function drawBird() {

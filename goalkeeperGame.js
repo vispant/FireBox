@@ -4,7 +4,6 @@ const SHOOTER_SRC = {
   idle: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_idle.png",
   kick: "Asset/kenney_platformer-characters/PNG/Player/Poses/player_kick.png",
 };
-const BALL_SRC = "Asset/football/PNG/Equipment/ball_soccer1.png"; // user-provided Kenney Sports Pack
 
 const VISIBILITY_MIN = 0.4; // ignore a tracked point if the model isn't confident it's in frame
 const COUNTDOWN_SECONDS = 3;
@@ -18,6 +17,106 @@ const FLIGHT_MS_PER_LEVEL = 95; // faster each level (less reaction time)
 const MIN_FLIGHT_MS = 430; // never gets unfairly instant
 const SAVE_RADIUS = 46; // how close a tracked hand must get to the ball to save it
 const GLOVE_SIZE = 36; // half-size of the drawn glove (see drawGlove)
+
+// A crisp football rendered once at high resolution (the tiny Kenney PNG turns
+// blurry when scaled up on a full-resolution canvas). Pentagon patches + seams,
+// spherical shading and a glossy highlight; rotated at draw time for spin.
+function createBallSprite() {
+  const size = 256;
+  const c = document.createElement("canvas");
+  c.width = size;
+  c.height = size;
+  const g = c.getContext("2d");
+  const R = size / 2 - 3;
+  g.translate(size / 2, size / 2);
+
+  g.save();
+  g.beginPath();
+  g.arc(0, 0, R, 0, Math.PI * 2);
+  g.clip();
+
+  const base = g.createRadialGradient(-R * 0.3, -R * 0.35, R * 0.1, 0, 0, R);
+  base.addColorStop(0, "#ffffff");
+  base.addColorStop(0.75, "#eef2f7");
+  base.addColorStop(1, "#c4ccd8");
+  g.fillStyle = base;
+  g.fillRect(-R, -R, R * 2, R * 2);
+
+  function pentagon(cx, cy, r, rot) {
+    g.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = rot + (Math.PI * 2 * i) / 5;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.closePath();
+  }
+
+  const patch = g.createLinearGradient(-R, -R, R, R);
+  patch.addColorStop(0, "#334155");
+  patch.addColorStop(1, "#0b1220");
+  g.fillStyle = patch;
+  g.strokeStyle = "rgba(15,23,42,0.55)";
+  g.lineWidth = 3;
+  g.lineJoin = "round";
+
+  // central patch and five partial patches wrapping around the edge
+  pentagon(0, 0, R * 0.34, -Math.PI / 2);
+  g.fill();
+  const outer = [];
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + (Math.PI * 2 * i) / 5 + Math.PI / 5;
+    const cx = Math.cos(a) * R * 0.98;
+    const cy = Math.sin(a) * R * 0.98;
+    outer.push({ cx, cy, a });
+    pentagon(cx, cy, R * 0.34, a + Math.PI);
+    g.fill();
+  }
+  // seams connecting the central patch to the outer ones
+  g.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const va = -Math.PI / 2 + (Math.PI * 2 * i) / 5;
+    g.moveTo(Math.cos(va) * R * 0.34, Math.sin(va) * R * 0.34);
+    g.lineTo(Math.cos(va) * R * 0.7, Math.sin(va) * R * 0.7);
+  }
+  g.stroke();
+  g.strokeStyle = "rgba(100,116,139,0.35)";
+  g.lineWidth = 2;
+  g.beginPath();
+  for (const o of outer) {
+    const back = o.a + Math.PI;
+    g.moveTo(o.cx + Math.cos(back - 0.6) * R * 0.34, o.cy + Math.sin(back - 0.6) * R * 0.34);
+    g.lineTo(o.cx + Math.cos(back + 0.6) * R * 0.34, o.cy + Math.sin(back + 0.6) * R * 0.34);
+  }
+  g.stroke();
+
+  // sphere shading
+  const shade = g.createRadialGradient(-R * 0.25, -R * 0.3, R * 0.2, 0, 0, R * 1.02);
+  shade.addColorStop(0, "rgba(255,255,255,0)");
+  shade.addColorStop(0.65, "rgba(15,23,42,0.08)");
+  shade.addColorStop(1, "rgba(15,23,42,0.5)");
+  g.fillStyle = shade;
+  g.fillRect(-R, -R, R * 2, R * 2);
+  g.restore();
+
+  // glossy highlight + outline
+  const gloss = g.createRadialGradient(-R * 0.38, -R * 0.42, 0, -R * 0.38, -R * 0.42, R * 0.42);
+  gloss.addColorStop(0, "rgba(255,255,255,0.85)");
+  gloss.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gloss;
+  g.beginPath();
+  g.ellipse(-R * 0.38, -R * 0.42, R * 0.38, R * 0.26, -0.6, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = "rgba(15,23,42,0.75)";
+  g.lineWidth = 4;
+  g.beginPath();
+  g.arc(0, 0, R, 0, Math.PI * 2);
+  g.stroke();
+
+  return { img: c, loaded: true };
+}
 
 function loadSprite(src) {
   const img = new Image();
@@ -168,7 +267,7 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     idle: loadSprite(SHOOTER_SRC.idle),
     kick: loadSprite(SHOOTER_SRC.kick),
   };
-  const ballSprite = loadSprite(BALL_SRC);
+  const ballSprite = createBallSprite();
 
   const sfxPop = new Audio("balloon_pop.mp3");
   const sfxExplosion = new Audio("explosion_bomb.mp3");
@@ -202,6 +301,7 @@ export function createGoalkeeperGame({ canvas, ctx }) {
 
   let score, lives, level, shotsThisLevel, handsReady, countdown;
   let phase, phaseTimer, ball, zoneIndex, lastZoneIndex, particles, floaters, shake;
+  let netRipple = null;
 
   // First-person "standing in the goal" framing: the posts sit near the left/
   // right screen edges and the crossbar near the top, so the whole screen
@@ -243,6 +343,7 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     particles = [];
     floaters = [];
     shake = 0;
+    netRipple = null;
     lastZoneIndex = -1;
     ball = null;
     startWindup();
@@ -295,17 +396,42 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     floaters.push({ x, y, text, color, big, life: 46, maxLife: 46 });
   }
 
+  function spawnConfetti(x, y) {
+    const colors = ["#f87171", "#fbbf24", "#4ade80", "#60a5fa", "#c084fc", "#f472b6", "#ffffff"];
+    for (let i = 0; i < 44; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;
+      const sp = 3 + Math.random() * 5;
+      particles.push({
+        x,
+        y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        g: 0.16,
+        rect: true,
+        w: 5 + Math.random() * 5,
+        h: 3 + Math.random() * 4,
+        rot: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 0.4,
+        color: colors[i % colors.length],
+        life: 70 + Math.random() * 25,
+        maxLife: 95,
+      });
+    }
+  }
+
   function resolveShot(wasSaved) {
     phase = "result";
     phaseTimer = RESULT_MS;
     if (wasSaved) {
       score += 1;
       spawnBurst(ball.x, ball.y, "#4ade80");
+      spawnConfetti(ball.x, ball.y);
       addFloater(ball.x, ball.y - 30, "SAVED!", "#4ade80", true);
       playSound(sfxPop);
     } else {
       lives -= 1;
       spawnBurst(ball.endX, ball.endY, "#ef4444");
+      netRipple = { x: ball.endX, y: ball.endY, age: 0 };
       addFloater(canvas.width / 2, canvas.height * 0.32, "GOAL!", "#ef4444", true);
       shake = Math.max(shake, 12);
       playSound(sfxExplosion);
@@ -344,7 +470,13 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     for (const p of particles) {
       p.x += p.vx;
       p.y += p.vy;
+      if (p.g) p.vy += p.g;
+      if (p.vr) p.rot += p.vr;
       p.life -= 1;
+    }
+    if (netRipple) {
+      netRipple.age += 1;
+      if (netRipple.age > 44) netRipple = null;
     }
     particles = particles.filter((p) => p.life > 0);
 
@@ -367,6 +499,7 @@ export function createGoalkeeperGame({ canvas, ctx }) {
       ball.x = ball.startX + (ball.endX - ball.startX) * t;
       ball.y = ball.startY + (ball.endY - ball.startY) * t;
       ball.r = 7 + 17 * t;
+      ball.spin = t * 12;
 
       if (landmarks) {
         for (const idx of [POSE.LEFT_WRIST, POSE.RIGHT_WRIST]) {
@@ -687,6 +820,7 @@ export function createGoalkeeperGame({ canvas, ctx }) {
 
     if (ballSprite.loaded) {
       const d = ball.r * 2;
+      ctx.rotate((ball.spin) || 0);
       ctx.drawImage(ballSprite.img, -d / 2, -d / 2, d, d);
     } else {
       // procedural fallback for the brief window before the sprite loads
@@ -774,20 +908,44 @@ export function createGoalkeeperGame({ canvas, ctx }) {
       }
     }
 
+    if (netRipple) {
+      const a = netRipple.age / 44;
+      for (let i = 0; i < 3; i++) {
+        const rr = a * 150 + i * 26;
+        ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, 0.6 - a * 0.6 - i * 0.14)})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(netRipple.x, netRipple.y, rr, rr * 0.75, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
     for (const p of particles) {
-      ctx.globalAlpha = p.life / p.maxLife;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.globalAlpha = Math.min(1, (p.life / p.maxLife) * 1.6);
       ctx.fillStyle = p.color;
-      ctx.fill();
+      if (p.rect) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.globalAlpha = 1;
     }
 
+    ctx.lineJoin = "round";
     for (const f of floaters) {
       ctx.globalAlpha = Math.min(1, f.life / 15);
-      ctx.fillStyle = f.color;
-      ctx.font = f.big ? "bold 40px system-ui, sans-serif" : "bold 20px system-ui, sans-serif";
+      ctx.font = f.big ? "bold 46px system-ui, sans-serif" : "bold 20px system-ui, sans-serif";
       ctx.textAlign = "center";
+      ctx.lineWidth = f.big ? 8 : 4;
+      ctx.strokeStyle = "rgba(15,23,42,0.85)";
+      ctx.strokeText(f.text, f.x, f.y);
+      ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
       ctx.globalAlpha = 1;
     }

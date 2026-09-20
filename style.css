@@ -338,3 +338,11 @@ canvas {
     font-size: 0.85rem;
   }
 }
+
+/* Soft edge darkening over every game for depth (ignores clicks). */
+#vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(2, 6, 23, 0) 58%, rgba(2, 6, 23, 0.34) 100%);
+}

@@ -31,6 +31,18 @@ function colorsForOpponent(o) {
   return { uniform, skin: o.skinTone, gear: o.gearColor };
 }
 
+// Dark outline: a slightly larger flat-black copy drawn first (no depth write) gives
+// every part a crisp cel-shaded silhouette edge. DoubleSide because the y-down
+// orthographic camera flips triangle winding.
+const OUTLINE_MAT = new THREE.MeshBasicMaterial({ color: 0x0b0f19, side: THREE.DoubleSide, depthWrite: false });
+function addOutline(mesh, scale = 1.08) {
+  const hull = new THREE.Mesh(mesh.geometry, OUTLINE_MAT.clone());
+  hull.scale.setScalar(scale);
+  hull.renderOrder = -1;
+  mesh.add(hull);
+  return mesh;
+}
+
 function addBone(parent, offsetX, offsetY, length, radius, material) {
   const pivot = new THREE.Group();
   pivot.position.set(offsetX, offsetY, 0);
@@ -38,7 +50,8 @@ function addBone(parent, offsetX, offsetY, length, radius, material) {
 
   // Positive y = down (matches the canvas-pixel convention used everywhere else
   // in this game), so a bone hangs DOWN from its pivot by moving toward +y.
-  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(radius, length, 4, 8), material);
+  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(radius, length, 8, 16), material);
+  addOutline(mesh, 1.13);
   mesh.position.y = length / 2 + radius;
   pivot.add(mesh);
 
@@ -66,13 +79,16 @@ function buildRig(colors, bulk) {
     new THREE.CircleGeometry(46, 24),
     new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32 })
   );
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.set(0, FEET_OFFSET - 4, 0);
+  shadow.scale.set(2.1, 0.5, 1);
+  shadow.material.depthWrite = false;
+  shadow.renderOrder = -2;
+  shadow.position.set(0, FEET_OFFSET - 2, -40);
   characterGroup.add(shadow);
 
   const torsoTop = -74;
 
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(56, 92, 32), uniformMat);
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(56, 92, 32, 2, 3, 2), uniformMat);
+  addOutline(torso, 1.06);
   torso.position.set(0, -28, 0);
   characterGroup.add(torso);
 
@@ -84,7 +100,8 @@ function buildRig(colors, bulk) {
   neck.position.set(0, (neckBottom + neckTop) / 2, 0);
   characterGroup.add(neck);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(HEAD_RADIUS, 20, 16), skinMat);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(HEAD_RADIUS, 32, 24), skinMat);
+  addOutline(head, 1.07);
   head.position.set(0, HEAD_Y, 0);
   characterGroup.add(head);
 
@@ -96,13 +113,23 @@ function buildRig(colors, bulk) {
   earR.position.x = HEAD_RADIUS - 3;
   characterGroup.add(earL, earR);
 
-  const eyeGeo = new THREE.SphereGeometry(2.6, 8, 8);
+  const eyeGeo = new THREE.SphereGeometry(2.6, 12, 12);
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1c1917 });
-  const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-  eyeL.position.set(-8, HEAD_Y - 3, 20);
-  const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-  eyeR.position.set(8, HEAD_Y - 3, 20);
-  characterGroup.add(eyeL, eyeR);
+  const eyeWhiteGeo = new THREE.SphereGeometry(4.4, 12, 12);
+  const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+  for (const ex of [-8, 8]) {
+    const white = new THREE.Mesh(eyeWhiteGeo, eyeWhiteMat);
+    white.position.set(ex, HEAD_Y - 3, 18.5);
+    white.scale.set(1, 0.85, 0.5);
+    const pupil = new THREE.Mesh(eyeGeo, eyeMat);
+    pupil.position.set(ex, HEAD_Y - 3, 21);
+    pupil.scale.set(1, 1, 0.6);
+    characterGroup.add(white, pupil);
+  }
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(3.4, 10, 10), skinMat);
+  nose.position.set(0, HEAD_Y + 3, 22);
+  nose.scale.set(0.9, 1.1, 0.8);
+  characterGroup.add(nose);
 
   const mouth = new THREE.Mesh(
     new THREE.BoxGeometry(11, 2.2, 2),
@@ -116,7 +143,8 @@ function buildRig(colors, bulk) {
   characterGroup.add(shoulderL);
   const upperArmL = addBone(shoulderL, 0, 0, 34, 9, uniformMat);
   const lowerArmL = addBone(upperArmL.end, 0, 0, 30, 7.5, skinMat);
-  const handL = new THREE.Mesh(new THREE.SphereGeometry(9, 10, 8), gearMat);
+  const handL = new THREE.Mesh(new THREE.SphereGeometry(9, 16, 12), gearMat);
+  addOutline(handL, 1.14);
   handL.scale.set(0.85, 1.15, 0.75);
   lowerArmL.end.add(handL);
 
@@ -125,7 +153,8 @@ function buildRig(colors, bulk) {
   characterGroup.add(shoulderR);
   const upperArmR = addBone(shoulderR, 0, 0, 34, 9, uniformMat);
   const lowerArmR = addBone(upperArmR.end, 0, 0, 30, 7.5, skinMat);
-  const handR = new THREE.Mesh(new THREE.SphereGeometry(9, 10, 8), gearMat);
+  const handR = new THREE.Mesh(new THREE.SphereGeometry(9, 16, 12), gearMat);
+  addOutline(handR, 1.14);
   handR.scale.set(0.85, 1.15, 0.75);
   lowerArmR.end.add(handR);
 
@@ -135,6 +164,7 @@ function buildRig(colors, bulk) {
   const upperLegL = addBone(hipL, 0, 0, 46, 11, uniformMat);
   const lowerLegL = addBone(upperLegL.end, 0, 0, 42, 9, uniformMat);
   const footL = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 30), gearMat);
+  addOutline(footL, 1.1);
   footL.position.z = 6;
   lowerLegL.end.add(footL);
 
@@ -144,6 +174,7 @@ function buildRig(colors, bulk) {
   const upperLegR = addBone(hipR, 0, 0, 46, 11, uniformMat);
   const lowerLegR = addBone(upperLegR.end, 0, 0, 42, 9, uniformMat);
   const footR = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 30), gearMat);
+  addOutline(footR, 1.1);
   footR.position.z = 6;
   lowerLegR.end.add(footR);
 
@@ -346,7 +377,8 @@ export function createFighter3D(canvasEl) {
   const camera = new THREE.OrthographicCamera(0, 1, 0, 1, 1, 3000);
   camera.position.z = 1000;
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.42));
+  scene.add(new THREE.HemisphereLight(0xdfeaff, 0x6b4f38, 0.4));
   const keyLight = new THREE.DirectionalLight(0xfff4e0, 0.9);
   keyLight.position.set(150, -400, 600);
   scene.add(keyLight);

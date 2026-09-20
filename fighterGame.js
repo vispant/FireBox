@@ -5,7 +5,7 @@ import {
   FEET_OFFSET,
   HEAD_CENTER_OFFSET,
   HEAD_RADIUS,
-} from "./fighter3d.js?v=6";
+} from "./fighter3d.js?v=7";
 
 // Tune these if strikes feel unresponsive (too high) or trigger accidentally (too low).
 const STRIKE_SPEED_THRESHOLD = 28; // px moved between detected frames to count as a hit

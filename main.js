@@ -2,20 +2,20 @@ import {
   PoseLandmarker,
   FilesetResolver,
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
-import { createCatchGame } from "./catchGame.js?v=19";
-import { createFighterGame } from "./fighterGame.js?v=16";
-import { createGoalkeeperGame } from "./goalkeeperGame.js?v=5";
-import { createPenaltyKicksGame } from "./penaltyKicksGame.js?v=4";
+import { createCatchGame } from "./catchGame.js?v=20";
+import { createFighterGame } from "./fighterGame.js?v=17";
+import { createGoalkeeperGame } from "./goalkeeperGame.js?v=6";
+import { createPenaltyKicksGame } from "./penaltyKicksGame.js?v=5";
 import { createPersonSegmenter } from "./segmentation.js?v=3";
 import { signUp, signIn, signOut, getCurrentUser, fetchCountry, supabase } from "./auth.js?v=1";
 import { TURNSTILE_SITE_KEY, SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=1";
-import { createFlappyGame } from "./flappyGame.js?v=5";
-import { createWhackGame } from "./whackGame.js?v=5";
-import { createSnakeArenaGame } from "./snakeArenaGame.js?v=16";
-import { createBrickGame } from "./brickGame.js?v=7";
-import { createRunnerGame } from "./runnerGame.js?v=4";
-import { createHopperGame } from "./hopperGame.js?v=8";
-import { createCarDodgeGame } from "./carDodgeGame.js?v=18";
+import { createFlappyGame } from "./flappyGame.js?v=6";
+import { createWhackGame } from "./whackGame.js?v=6";
+import { createSnakeArenaGame } from "./snakeArenaGame.js?v=17";
+import { createBrickGame } from "./brickGame.js?v=8";
+import { createRunnerGame } from "./runnerGame.js?v=5";
+import { createHopperGame } from "./hopperGame.js?v=9";
+import { createCarDodgeGame } from "./carDodgeGame.js?v=19";
 import { enableSupersampling } from "./renderScale.js?v=1";
 
 const video = document.getElementById("webcam");

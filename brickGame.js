@@ -15,7 +15,6 @@ const LIVES_START = 3;
 const BEST_KEY = "fireBox.brick.best.v1";
 
 const BRICK_COLORS = ["#f87171", "#fb923c", "#fbbf24", "#4ade80", "#60a5fa"];
-const BALL_SRC = "Asset/kenney_jumper-pack/PNG/HUD/coin_gold.png";
 
 function loadSprite(src) {
   const sprite = { img: new Image(), loaded: false };
@@ -41,14 +40,13 @@ function saveBest(value) {
 }
 
 export function createBrickGame({ canvas, ctx }) {
-  const ballSprite = loadSprite(BALL_SRC);
-
   let paddleX = canvas.width / 2;
   let ball = { x: 0, y: 0, vx: 0, vy: 0 };
   let bricks = [];
   let particles = [];
   let floaters = [];
   let trail = [];
+  let levelBanner = 0; // ms remaining for the LEVEL N flash
   let score = 0;
   let best = loadBest();
   let lives = LIVES_START;
@@ -116,6 +114,9 @@ export function createBrickGame({ canvas, ctx }) {
         vy: Math.sin(angle) * speed,
         r: 3 + Math.random() * 2,
         color,
+        sq: i % 3 !== 0,
+        rot: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 10,
         life: 450,
         maxLife: 450,
       });
@@ -135,6 +136,7 @@ export function createBrickGame({ canvas, ctx }) {
     score = 0;
     lives = LIVES_START;
     level = 1;
+    levelBanner = 0;
     gameOver = false;
     isNewBest = false;
   }
@@ -164,9 +166,11 @@ export function createBrickGame({ canvas, ctx }) {
       p.x += p.vx * dtSec;
       p.y += p.vy * dtSec;
       p.vy += 260 * dtSec;
+      if (p.vr) p.rot += p.vr * dtSec;
       p.life -= dt;
     }
     particles = particles.filter((p) => p.life > 0);
+    if (levelBanner > 0) levelBanner = Math.max(0, levelBanner - dt);
 
     for (const f of floaters) {
       f.y -= 40 * dtSec;
@@ -238,6 +242,7 @@ export function createBrickGame({ canvas, ctx }) {
 
     if (bricks.every((b) => !b.alive)) {
       level += 1;
+      levelBanner = 1600;
       buildBricks();
       resetBallOnPaddle();
     }
@@ -300,7 +305,7 @@ export function createBrickGame({ canvas, ctx }) {
     ctx.fillRect(w - 3, 0, 3, h);
   }
 
-  function drawBrick(brick) {
+  function drawBrick(brick, sheenX) {
     const { x, y, w, h, color } = brick;
     const r = 5;
     // drop shadow
@@ -324,6 +329,18 @@ export function createBrickGame({ canvas, ctx }) {
     ctx.roundRect(x + 3, y + 2, w - 6, h * 0.32, 3);
     ctx.fill();
 
+    // a slow diagonal sheen that sweeps across the whole wall
+    const sd = Math.abs(x + w / 2 + y * 0.6 - sheenX);
+    if (sd < 90) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+      ctx.clip();
+      ctx.fillStyle = `rgba(255,255,255,${0.32 * (1 - sd / 90)})`;
+      ctx.fillRect(x, y, w, h);
+      ctx.restore();
+    }
+
     // crisp outline
     ctx.strokeStyle = "rgba(0,0,0,0.35)";
     ctx.lineWidth = 1;
@@ -335,8 +352,9 @@ export function createBrickGame({ canvas, ctx }) {
   function draw() {
     drawBackdrop();
 
+    const sheenX = ((performance.now() / 1000) * 260) % (canvas.width + 700) - 250;
     for (const brick of bricks) {
-      if (brick.alive) drawBrick(brick);
+      if (brick.alive) drawBrick(brick, sheenX);
     }
 
     // paddle: shadow, metallic body, coloured end caps, glossy top
@@ -384,23 +402,50 @@ export function createBrickGame({ canvas, ctx }) {
     ctx.beginPath();
     ctx.arc(ball.x, ball.y, BALL_RADIUS * 3, 0, Math.PI * 2);
     ctx.fill();
-    if (ballSprite.loaded) {
-      const s = BALL_RADIUS * 2.3;
-      ctx.drawImage(ballSprite.img, ball.x - s / 2, ball.y - s / 2, s, s);
-    } else {
-      ctx.fillStyle = "#f8fafc";
-      ctx.beginPath();
-      ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    // crisp glossy gold orb (the tiny coin sprite goes soft at full resolution)
+    const orbR = BALL_RADIUS * 1.15;
+    const orb = ctx.createRadialGradient(ball.x - orbR * 0.35, ball.y - orbR * 0.4, orbR * 0.1, ball.x, ball.y, orbR);
+    orb.addColorStop(0, "#fffbe0");
+    orb.addColorStop(0.45, "#fde047");
+    orb.addColorStop(1, "#d97706");
+    ctx.fillStyle = orb;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, orbR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,53,15,0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
 
     for (const p of particles) {
       ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
       ctx.fillStyle = p.color;
-      ctx.fill();
+      if (p.sq) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillRect(-p.r, -p.r, p.r * 2, p.r * 2);
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.globalAlpha = 1;
+    }
+
+    if (levelBanner > 0) {
+      const a = Math.min(1, levelBanner / 500);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.textAlign = "center";
+      ctx.lineJoin = "round";
+      ctx.font = "bold 56px system-ui, sans-serif";
+      ctx.lineWidth = 9;
+      ctx.strokeStyle = "rgba(15,23,42,0.85)";
+      ctx.strokeText("LEVEL " + level, canvas.width / 2, canvas.height * 0.5);
+      ctx.fillStyle = "#fbbf24";
+      ctx.fillText("LEVEL " + level, canvas.width / 2, canvas.height * 0.5);
+      ctx.restore();
     }
 
     ctx.textAlign = "center";
