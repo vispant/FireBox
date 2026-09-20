@@ -144,6 +144,8 @@ function computeViewportResolution() {
 
 function setScreen(next) {
   screen = next;
+  // Menu-style screens get a solid dark-blue backdrop so the webcam/game canvas never shows through.
+  overlay.classList.toggle("solid", ["loading", "auth", "hub", "menu", "normalMenu"].includes(next));
   hud.classList.toggle("hidden", screen !== "playing");
 }
 

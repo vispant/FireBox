@@ -346,3 +346,8 @@ canvas {
   pointer-events: none;
   background: radial-gradient(ellipse at center, rgba(2, 6, 23, 0) 58%, rgba(2, 6, 23, 0.34) 100%);
 }
+
+/* Menus (loading, sign-in, hub, game lists): solid dark-blue background instead of the translucent scrim. */
+#overlay.solid {
+  background: radial-gradient(ellipse at 50% 15%, #14295f 0%, #0b1a45 52%, #060d26 100%);
+}
