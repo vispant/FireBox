@@ -163,7 +163,7 @@ function layoutQuestionButtons(canvas) {
   const gapY = 18;
   const totalW = btnW * 2 + gapX;
   const startX = canvas.width / 2 - totalW / 2;
-  const startY = canvas.height * 0.58;
+  const startY = canvas.height * 0.29 + 150;
   const rects = [];
   for (let i = 0; i < 4; i++) {
     const col = i % 2;
@@ -636,54 +636,87 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
     ctx.strokeRect(x, y, w, h);
   }
 
+  // Stadium behind the pitch: sky, a roofed stand packed with little animated
+  // spectators (a gentle crowd wave), floodlights with glow, and ad boards.
   function drawStadium() {
     const w = canvas.width;
     const horizon = canvas.height * 0.34;
 
     const sky = ctx.createLinearGradient(0, 0, 0, horizon);
-    sky.addColorStop(0, "#7dd3fc");
-    sky.addColorStop(1, "#bae6fd");
+    sky.addColorStop(0, "#5aaef0");
+    sky.addColorStop(1, "#bfe6fb");
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, horizon);
 
     const roofTop = horizon * 0.14;
     const standsTop = horizon * 0.3;
 
+    // roof: dark band with truss lines and a lit underside edge
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, roofTop, w, standsTop - roofTop);
-    ctx.fillStyle = "rgba(148,163,184,0.4)";
+    ctx.strokeStyle = "rgba(148,163,184,0.25)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < w; x += 26) {
+      ctx.beginPath();
+      ctx.moveTo(x, roofTop);
+      ctx.lineTo(x + 13, standsTop - 3);
+      ctx.lineTo(x + 26, roofTop);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(226,232,240,0.5)";
     ctx.fillRect(0, standsTop - 3, w, 3);
 
+    // stand body, shaded darker toward pitch level
     const standGrad = ctx.createLinearGradient(0, standsTop, 0, horizon);
-    standGrad.addColorStop(0, "#1e293b");
+    standGrad.addColorStop(0, "#243044");
     standGrad.addColorStop(1, "#0f172a");
     ctx.fillStyle = standGrad;
     ctx.fillRect(0, standsTop, w, horizon - standsTop);
 
+    // spectators: shoulders + head, bigger the closer the row, colour clumped by "section"
+    const t = performance.now() / 1000;
+    const skins = ["#f5cfa0", "#e0ac69", "#c68642", "#8d5524", "#f1c27d", "#ffdbac"];
+    const shirts = ["#dc2626", "#2563eb", "#f8fafc", "#facc15", "#16a34a", "#f97316", "#7c3aed", "#0ea5e9"];
     const rows = 6;
     for (let r = 0; r < rows; r++) {
-      const y = standsTop + ((horizon - standsTop) * (r + 0.5)) / rows;
-      const count = 58;
-      const dotR = 1.6 + (rows - r) * 0.25;
+      const rowY = standsTop + ((horizon - standsTop) * (r + 0.85)) / rows;
+      const sc = 0.62 + r * 0.14;
+      const count = 44 + r * 2;
+      const spacing = w / count;
       for (let i = 0; i < count; i++) {
-        const x = (w / count) * (i + 0.5) + Math.sin(i * 12.9 + r * 3.1) * 3;
-        const hue = (i * 47 + r * 91) % 360;
-        const light = 42 + (r % 2) * 14 + ((i * 7) % 10);
-        ctx.fillStyle = `hsl(${hue}, 50%, ${light}%)`;
+        const seed = i * 13.37 + r * 7.9;
+        const rnd = Math.abs(Math.sin(seed * 91.7)) % 1;
+        const cheer = rnd > 0.55 ? Math.max(0, Math.sin(t * 3.2 + i * 0.4 + r)) * 2.4 * sc : 0;
+        const x = spacing * (i + 0.5) + Math.sin(seed) * 2;
+        const shirt = rnd > 0.8 ? shirts[Math.floor(rnd * 100) % shirts.length] : shirts[(Math.floor(i / 5) + r * 2) % shirts.length];
+        ctx.fillStyle = shirt;
         ctx.beginPath();
-        ctx.arc(x, y, dotR, 0, Math.PI * 2);
+        ctx.roundRect(x - 5 * sc, rowY - 8 * sc - cheer, 10 * sc, 9 * sc, 3 * sc);
+        ctx.fill();
+        ctx.fillStyle = skins[Math.floor(rnd * 60) % skins.length];
+        ctx.beginPath();
+        ctx.arc(x, rowY - 11.5 * sc - cheer, 3.3 * sc, 0, Math.PI * 2);
         ctx.fill();
       }
+      // dark rail line beneath each row for tiered depth
+      ctx.fillStyle = "rgba(2,6,23,0.55)";
+      ctx.fillRect(0, rowY + 1, w, 2);
     }
+    const crowdShade = ctx.createLinearGradient(0, standsTop, 0, horizon);
+    crowdShade.addColorStop(0, "rgba(2,6,23,0.55)");
+    crowdShade.addColorStop(1, "rgba(2,6,23,0.05)");
+    ctx.fillStyle = crowdShade;
+    ctx.fillRect(0, standsTop, w, horizon - standsTop);
 
+    // floodlights with a soft glow and a small bulb cluster
     for (const fx of [w * 0.06, w * 0.94]) {
       const lampY = roofTop - 6;
-      const beam = ctx.createRadialGradient(fx, lampY, 0, fx, lampY, 30);
-      beam.addColorStop(0, "rgba(255,251,235,0.55)");
+      const beam = ctx.createRadialGradient(fx, lampY, 0, fx, lampY, 44);
+      beam.addColorStop(0, "rgba(255,251,235,0.7)");
       beam.addColorStop(1, "rgba(255,251,235,0)");
       ctx.fillStyle = beam;
       ctx.beginPath();
-      ctx.arc(fx, lampY, 30, 0, Math.PI * 2);
+      ctx.arc(fx, lampY, 44, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = "#94a3b8";
@@ -700,11 +733,18 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
       }
     }
 
+    // advertising boards: alternating coloured segments with a bevel and lettering marks
     const boardColors = ["#dc2626", "#2563eb", "#f59e0b", "#16a34a", "#7c3aed"];
     const segW = w / 9;
     for (let i = 0; i < 9; i++) {
+      const bx = i * segW;
       ctx.fillStyle = boardColors[i % boardColors.length];
-      ctx.fillRect(i * segW, horizon - 16, segW - 2, 16);
+      ctx.fillRect(bx, horizon - 16, segW - 2, 16);
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.fillRect(bx, horizon - 16, segW - 2, 3);
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fillRect(bx + segW * 0.2, horizon - 10, segW * 0.42, 3);
+      ctx.fillRect(bx + segW * 0.2, horizon - 6, segW * 0.28, 2);
     }
 
     return horizon;
@@ -915,27 +955,50 @@ export function createPenaltyKicksGame({ canvas, ctx, getPlayerName }) {
   // ---------------- question / aim / waiting overlays ----------------
 
   function drawQuestionOverlay() {
-    ctx.fillStyle = "rgba(15,23,42,0.55)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const W = canvas.width;
+    const H = canvas.height;
+    ctx.fillStyle = "rgba(15,23,42,0.35)";
+    ctx.fillRect(0, 0, W, H);
+
+    // a solid card behind the question so it never fights with the goal/keeper artwork
+    const cardW = Math.min(W * 0.8, 640);
+    const cardX = W / 2 - cardW / 2;
+    const cardY = H * 0.29;
+    const cardH = 330;
+    roundRectPath(ctx, cardX, cardY, cardW, cardH, 22);
+    const cardGrad = ctx.createLinearGradient(0, cardY, 0, cardY + cardH);
+    cardGrad.addColorStop(0, "rgba(30,41,59,0.94)");
+    cardGrad.addColorStop(1, "rgba(15,23,42,0.94)");
+    ctx.fillStyle = cardGrad;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(148,163,184,0.35)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
     ctx.textAlign = "center";
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "bold 17px system-ui, sans-serif";
+    ctx.fillText("ANSWER TO CHOOSE WHERE YOU SHOOT", W / 2, cardY + 36);
+
     ctx.fillStyle = "#f8fafc";
-    ctx.font = "bold 20px system-ui, sans-serif";
-    ctx.fillText("Answer to choose where you shoot:", canvas.width / 2, canvas.height * 0.4);
-    ctx.font = "bold 44px system-ui, sans-serif";
-    ctx.fillText(question.text, canvas.width / 2, canvas.height * 0.5);
+    ctx.font = "bold 50px system-ui, sans-serif";
+    ctx.fillText(question.text, W / 2, cardY + 108);
 
     const rects = layoutQuestionButtons(canvas);
-    ctx.font = "bold 26px system-ui, sans-serif";
+    ctx.font = "bold 28px system-ui, sans-serif";
     for (const r of rects) {
-      ctx.fillStyle = "rgba(255,255,255,0.14)";
-      roundRectPath(ctx, r.x, r.y, r.w, r.h, 10);
+      const g = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
+      g.addColorStop(0, "rgba(96,165,250,0.32)");
+      g.addColorStop(1, "rgba(37,99,235,0.22)");
+      ctx.fillStyle = g;
+      roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
       ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.45)";
+      ctx.strokeStyle = "rgba(147,197,253,0.65)";
       ctx.lineWidth = 2;
-      roundRectPath(ctx, r.x, r.y, r.w, r.h, 10);
+      roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
       ctx.stroke();
       ctx.fillStyle = "#f8fafc";
-      ctx.fillText(String(question.choices[r.index]), r.x + r.w / 2, r.y + r.h / 2 + 9);
+      ctx.fillText(String(question.choices[r.index]), r.x + r.w / 2, r.y + r.h / 2 + 10);
     }
   }
 

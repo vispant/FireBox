@@ -51,6 +51,8 @@ export function createFlappyGame({ canvas, ctx }) {
   let velocity = 0;
   let pipes = [];
   let clouds = [];
+  let puffs = [];
+  let bgScroll = 0;
   let score = 0;
   let best = loadBest();
   let gameOver = true;
@@ -100,6 +102,8 @@ export function createFlappyGame({ canvas, ctx }) {
     birdY = canvas.height / 2;
     velocity = 0;
     pipes = [];
+    puffs = [];
+    bgScroll = 0;
     seedClouds();
     score = 0;
     gameOver = false;
@@ -132,6 +136,9 @@ export function createFlappyGame({ canvas, ctx }) {
     if (flapQueued) {
       velocity = FLAP_VELOCITY;
       flapQueued = false;
+      for (let i = 0; i < 4; i++) {
+        puffs.push({ x: birdX - 10 - i * 4, y: birdY + 8 + Math.random() * 6, vx: -40 - Math.random() * 30, vy: 20 + Math.random() * 20, r: 4 + Math.random() * 3, life: 380, maxLife: 380 });
+      }
     }
 
     velocity += GRAVITY * dtSec;
@@ -154,6 +161,13 @@ export function createFlappyGame({ canvas, ctx }) {
     }
     pipes = pipes.filter((p) => p.x > -PIPE_WIDTH);
 
+    bgScroll += speed * dtSec;
+    for (const p of puffs) {
+      p.x += p.vx * dtSec - speed * dtSec * 0.3;
+      p.y += p.vy * dtSec;
+      p.life -= dtSec * 1000;
+    }
+    puffs = puffs.filter((p) => p.life > 0);
     for (const c of clouds) c.x -= CLOUD_SPEED * dtSec;
     clouds = clouds.filter((c) => c.x > -200);
     while (clouds.length === 0 || clouds[clouds.length - 1].x < canvas.width + 200) {
@@ -191,21 +205,95 @@ export function createFlappyGame({ canvas, ctx }) {
     }
   }
 
+  function drawSky() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "#3b9df0");
+    grad.addColorStop(0.55, "#8fd0fa");
+    grad.addColorStop(1, "#dff3fd");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // sun with a soft halo
+    const sx = w * 0.82;
+    const sy = h * 0.2;
+    const halo = ctx.createRadialGradient(sx, sy, 0, sx, sy, h * 0.55);
+    halo.addColorStop(0, "rgba(255,244,190,0.75)");
+    halo.addColorStop(0.35, "rgba(255,236,160,0.25)");
+    halo.addColorStop(1, "rgba(255,236,160,0)");
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#fff7c2";
+    ctx.beginPath();
+    ctx.arc(sx, sy, 34, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Two slowly scrolling layers of distant hills along the bottom.
+  function drawHills() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const layers = [
+      { color: "rgba(120,170,215,0.55)", base: h * 0.84, amp: 34, freq: 0.006, speed: 0.12 },
+      { color: "rgba(86,140,190,0.6)", base: h * 0.9, amp: 26, freq: 0.009, speed: 0.22 },
+    ];
+    for (const L of layers) {
+      ctx.fillStyle = L.color;
+      ctx.beginPath();
+      ctx.moveTo(0, h);
+      for (let x = 0; x <= w; x += 8) {
+        const y = L.base + Math.sin((x + bgScroll * L.speed) * L.freq) * L.amp + Math.sin((x + bgScroll * L.speed) * L.freq * 2.3) * (L.amp * 0.35);
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w, h);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
   function drawPipe(pipe) {
     const gapTop = pipe.gapCenter - PIPE_GAP / 2;
     const gapBottom = pipe.gapCenter + PIPE_GAP / 2;
     const w = PIPE_WIDTH;
 
+    // stone shaft with side shading and brick courses, matching the tower sprite
+    function shaft(y0, y1) {
+      if (y1 <= y0) return;
+      const g = ctx.createLinearGradient(pipe.x, 0, pipe.x + w, 0);
+      g.addColorStop(0, "#b2c0c6");
+      g.addColorStop(0.45, "#94a3ab");
+      g.addColorStop(1, "#6f8088");
+      ctx.fillStyle = g;
+      ctx.fillRect(pipe.x + 3, y0, w - 6, y1 - y0);
+      ctx.strokeStyle = "rgba(40,55,62,0.28)";
+      ctx.lineWidth = 1;
+      const start = Math.floor(y0 / 26) * 26;
+      for (let y = start; y < y1; y += 26) {
+        if (y < y0) continue;
+        ctx.beginPath();
+        ctx.moveTo(pipe.x + 3, y);
+        ctx.lineTo(pipe.x + w - 3, y);
+        ctx.stroke();
+        const off = ((y / 26) % 2) * (w / 4);
+        ctx.beginPath();
+        ctx.moveTo(pipe.x + w / 2 + off - w / 8, y);
+        ctx.lineTo(pipe.x + w / 2 + off - w / 8, Math.min(y + 26, y1));
+        ctx.stroke();
+      }
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.fillRect(pipe.x + 5, y0, 4, y1 - y0);
+    }
+
     if (towerSprite.loaded) {
       const h = w * (towerSprite.img.naturalHeight / towerSprite.img.naturalWidth);
-      ctx.fillStyle = "#94a3ab";
 
       const bottomShaftTop = gapBottom + h * PIPE_CAP_OVERLAP;
-      ctx.fillRect(pipe.x, bottomShaftTop, w, canvas.height - bottomShaftTop);
+      shaft(bottomShaftTop, canvas.height);
       ctx.drawImage(towerSprite.img, pipe.x, gapBottom, w, h);
 
       const topShaftBottom = gapTop - h * PIPE_CAP_OVERLAP;
-      ctx.fillRect(pipe.x, 0, w, topShaftBottom);
+      shaft(0, topShaftBottom);
       ctx.save();
       ctx.translate(pipe.x, gapTop);
       ctx.scale(1, -1);
@@ -219,6 +307,21 @@ export function createFlappyGame({ canvas, ctx }) {
   }
 
   function drawBird() {
+    // flap puffs trailing behind
+    for (const p of puffs) {
+      const a = Math.max(0, p.life / p.maxLife);
+      ctx.fillStyle = `rgba(255,255,255,${0.55 * a})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * (1.3 - a * 0.5), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // soft ground-independent shadow beneath so the bird reads against light sky
+    ctx.fillStyle = "rgba(15,40,80,0.12)";
+    ctx.beginPath();
+    ctx.ellipse(birdX + 4, birdY + BIRD_RADIUS + 6, BIRD_RADIUS * 0.9, BIRD_RADIUS * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.save();
     ctx.translate(birdX, birdY);
     ctx.rotate(Math.max(-0.5, Math.min(0.9, velocity / 600)));
@@ -239,26 +342,28 @@ export function createFlappyGame({ canvas, ctx }) {
   }
 
   function draw() {
-    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    grad.addColorStop(0, "#7dd3fc");
-    grad.addColorStop(1, "#bae6fd");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+    drawSky();
+    drawHills();
     drawClouds();
     for (const pipe of pipes) drawPipe(pipe);
     drawBird();
 
     if (countdown > 0) {
-      ctx.fillStyle = "rgba(15, 23, 42, 0.35)";
+      ctx.fillStyle = "rgba(15, 23, 42, 0.28)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.textAlign = "center";
-      ctx.fillStyle = "#f8fafc";
+      ctx.lineJoin = "round";
       ctx.font = "bold 120px system-ui, sans-serif";
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = "rgba(15,23,42,0.6)";
+      ctx.strokeText(String(Math.ceil(countdown)), canvas.width / 2, canvas.height / 2 + 40);
+      ctx.fillStyle = "#f8fafc";
       ctx.fillText(String(Math.ceil(countdown)), canvas.width / 2, canvas.height / 2 + 40);
 
       ctx.font = "bold 26px system-ui, sans-serif";
+      ctx.lineWidth = 6;
+      ctx.strokeText("Get ready! Space or click to flap", canvas.width / 2, canvas.height / 2 + 100);
       ctx.fillText("Get ready! Space or click to flap", canvas.width / 2, canvas.height / 2 + 100);
     }
   }

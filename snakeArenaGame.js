@@ -750,18 +750,68 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     return FACE_VARIANTS[hashString(`${id}-face`) % FACE_VARIANTS.length];
   }
 
+  function shadeHex(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = Math.max(0, Math.min(255, (n >> 16) + amt));
+    const g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amt));
+    const b = Math.max(0, Math.min(255, (n & 255) + amt));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function segmentsOnScreen(segments) {
+    const halfW = canvas.width / 2 + 40;
+    const halfH = canvas.height / 2 + 40;
+    for (let i = 0; i < segments.length; i += 4) {
+      const seg = segments[i];
+      if (Math.abs(seg.x - camera.x) < halfW && Math.abs(seg.y - camera.y) < halfH) return true;
+    }
+    return false;
+  }
+
   function drawSnakeBody(segments, color, highlight, heading, ownerId) {
     if (!segments || segments.length === 0) return;
-    ctx.fillStyle = color;
-    for (let i = segments.length - 1; i >= 0; i--) {
-      const seg = segments[i];
-      const r = i === 0 ? 13 : 10;
-      ctx.beginPath();
-      ctx.arc(seg.x, seg.y, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    if (!segmentsOnScreen(segments)) return;
+
+    // one smooth path through the body (every other segment is plenty at this spacing)
+    const path = new Path2D();
+    path.moveTo(segments[0].x, segments[0].y);
+    for (let i = 2; i < segments.length; i += 2) path.lineTo(segments[i].x, segments[i].y);
+    const last = segments[segments.length - 1];
+    path.lineTo(last.x, last.y);
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 24;
+    ctx.strokeStyle = shadeHex(color, -85);
+    ctx.stroke(path);
+    ctx.lineWidth = 20;
+    ctx.strokeStyle = color;
+    ctx.stroke(path);
+    ctx.lineWidth = 9;
+    ctx.strokeStyle = "rgba(255,255,255,0.28)";
+    ctx.stroke(path);
+    ctx.lineWidth = 14;
+    ctx.setLineDash([2, 13]);
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.stroke(path);
+    ctx.restore();
 
     const head = segments[0];
+    // head: slightly larger, with its own outline so it reads clearly
+    ctx.fillStyle = shadeHex(color, -85);
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 13, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    ctx.beginPath();
+    ctx.arc(head.x - 3, head.y - 4, 7, 0, Math.PI * 2);
+    ctx.fill();
+
     if (typeof heading === "number") {
       ctx.save();
       ctx.translate(head.x, head.y);
@@ -775,7 +825,7 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(head.x, head.y, 15, 0, Math.PI * 2);
+      ctx.arc(head.x, head.y, 17, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
@@ -795,8 +845,13 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     const panelX = canvas.width - panelW - 14;
     const panelY = Math.max(16, hudClearance(canvas, 90));
     const rowH = 20;
-    ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
-    ctx.fillRect(panelX, panelY, panelW, 30 + top.length * rowH);
+    ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, 30 + top.length * rowH, 12);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(148,163,184,0.25)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
     ctx.fillStyle = "#94a3b8";
     ctx.font = "bold 12px system-ui, sans-serif";
     ctx.textAlign = "left";
@@ -813,21 +868,26 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
     });
   }
 
+  const ORB_COLORS = ["#fbbf24", "#f472b6", "#60a5fa", "#4ade80", "#c084fc", "#fb923c"];
+
   function draw() {
-    ctx.fillStyle = "#0f172a";
+    const bg = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, 0, canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) * 0.75);
+    bg.addColorStop(0, "#16223f");
+    bg.addColorStop(1, "#0a1020");
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (!mySnake) return;
 
     ctx.save();
     ctx.translate(canvas.width / 2 - camera.x, canvas.height / 2 - camera.y);
 
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.12)";
-    ctx.lineWidth = 1;
     const gridSize = 60;
     const left = camera.x - canvas.width;
     const right = camera.x + canvas.width;
     const top = camera.y - canvas.height;
     const bottom = camera.y + canvas.height;
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.07)";
+    ctx.lineWidth = 1;
     for (let x = Math.floor(left / gridSize) * gridSize; x < right; x += gridSize) {
       ctx.beginPath();
       ctx.moveTo(x, top);
@@ -840,19 +900,48 @@ export function createSnakeArenaGame({ canvas, ctx, getPlayerName }) {
       ctx.lineTo(right, y);
       ctx.stroke();
     }
+    ctx.fillStyle = "rgba(148, 163, 184, 0.18)";
+    for (let x = Math.floor(left / gridSize) * gridSize; x < right; x += gridSize) {
+      for (let y = Math.floor(top / gridSize) * gridSize; y < bottom; y += gridSize) {
+        ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+      }
+    }
 
+    // out-of-bounds zone tinted red, with a glowing boundary line
+    ctx.fillStyle = "rgba(127, 29, 29, 0.32)";
+    ctx.beginPath();
+    ctx.rect(camera.x - canvas.width * 2, camera.y - canvas.height * 2, canvas.width * 4, canvas.height * 4);
+    ctx.arc(0, 0, arenaRadius, 0, Math.PI * 2, true);
+    ctx.fill();
+    ctx.save();
+    ctx.shadowColor = "#ef4444";
+    ctx.shadowBlur = 22;
     ctx.strokeStyle = "#f87171";
     ctx.lineWidth = 6;
     ctx.setLineDash([16, 12]);
     ctx.beginPath();
     ctx.arc(0, 0, arenaRadius, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.restore();
 
-    ctx.fillStyle = "#fbbf24";
+    // orbs: soft halo, bright core, tiny highlight -- only the ones actually on screen
+    const viewHalfW = canvas.width / 2 + 20;
+    const viewHalfH = canvas.height / 2 + 20;
     for (const orb of orbs.values()) {
+      if (Math.abs(orb.x - camera.x) > viewHalfW || Math.abs(orb.y - camera.y) > viewHalfH) continue;
+      const c = ORB_COLORS[(Math.abs(Math.floor(orb.x * 7 + orb.y * 13))) % ORB_COLORS.length];
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = c;
       ctx.beginPath();
-      ctx.arc(orb.x, orb.y, 5, 0, Math.PI * 2);
+      ctx.arc(orb.x, orb.y, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.beginPath();
+      ctx.arc(orb.x - 1.6, orb.y - 1.8, 1.8, 0, Math.PI * 2);
       ctx.fill();
     }
 

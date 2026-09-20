@@ -50,6 +50,7 @@ export function createWhackGame({ canvas, ctx }) {
 
   let holes = [];
   let floaters = [];
+  let sparks = [];
   let coins = 0;
   let best = loadBest();
   let timeLeft = SESSION_SECONDS;
@@ -58,7 +59,9 @@ export function createWhackGame({ canvas, ctx }) {
   let isNewBest = false;
 
   function computeHoles() {
-    const marginX = canvas.width * 0.18;
+    let marginX = canvas.width * 0.18;
+    const minSpacing = HOLE_RADIUS * 2.75; // keeps neighbouring dirt mounds from overlapping on narrow (phone) canvases
+    if ((canvas.width - marginX * 2) / COLS < minSpacing) marginX = Math.max(8, (canvas.width - minSpacing * COLS) / 2);
     const marginY = canvas.height * 0.22;
     const usableW = canvas.width - marginX * 2;
     const usableH = canvas.height - marginY * 2;
@@ -70,6 +73,7 @@ export function createWhackGame({ canvas, ctx }) {
           y: marginY + (usableH * (r + 0.5)) / ROWS,
           active: false,
           timer: 0,
+          age: 0,
           critter: 0,
         });
       }
@@ -97,7 +101,12 @@ export function createWhackGame({ canvas, ctx }) {
       if (dx * dx + dy * dy <= HOLE_RADIUS * HOLE_RADIUS && hole.active) {
         hole.active = false;
         coins += COINS_PER_HIT;
-        floaters.push({ x: hole.x, y: hole.y, life: 0.6, maxLife: 0.6 });
+        floaters.push({ x: hole.x, y: hole.y - 20, life: 0.7, maxLife: 0.7 });
+        for (let i = 0; i < 10; i++) {
+          const a = (Math.PI * 2 * i) / 10 + Math.random() * 0.4;
+          const sp = 90 + Math.random() * 120;
+          sparks.push({ x: hole.x, y: hole.y - 10, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40, life: 0.45, maxLife: 0.45, r: 3 + Math.random() * 3 });
+        }
         return;
       }
     }
@@ -108,6 +117,7 @@ export function createWhackGame({ canvas, ctx }) {
   function reset() {
     holes = computeHoles();
     floaters = [];
+    sparks = [];
     coins = 0;
     timeLeft = SESSION_SECONDS;
     spawnTimer = 0.5;
@@ -130,6 +140,7 @@ export function createWhackGame({ canvas, ctx }) {
     const hole = idle[Math.floor(Math.random() * idle.length)];
     hole.active = true;
     hole.timer = duration;
+    hole.age = 0;
     hole.critter = Math.floor(Math.random() * critterSprites.length);
   }
 
@@ -155,6 +166,7 @@ export function createWhackGame({ canvas, ctx }) {
 
     for (const hole of holes) {
       if (hole.active) {
+        hole.age += dtSec;
         hole.timer -= dtSec;
         if (hole.timer <= 0) hole.active = false;
       }
@@ -165,52 +177,186 @@ export function createWhackGame({ canvas, ctx }) {
       f.y -= 40 * dtSec;
       return f.life > 0;
     });
+    sparks = sparks.filter((p) => {
+      p.life -= dtSec;
+      p.x += p.vx * dtSec;
+      p.y += p.vy * dtSec;
+      p.vy += 380 * dtSec;
+      return p.life > 0;
+    });
+  }
+
+  function easeOutBack(t) {
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
+  // deterministic pseudo-random so the lawn doesn't shimmer frame to frame
+  function rand01(n) {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  function drawLawn() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "#1d7a3f");
+    grad.addColorStop(1, "#0f5a2c");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // mown stripes
+    const stripes = 12;
+    for (let i = 0; i < stripes; i++) {
+      ctx.fillStyle = i % 2 === 0 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.05)";
+      ctx.fillRect((w / stripes) * i, 0, w / stripes, h);
+    }
+
+    // grass tufts and tiny flowers
+    for (let i = 0; i < 90; i++) {
+      const x = rand01(i * 3.1) * w;
+      const y = rand01(i * 7.7 + 1) * h;
+      ctx.strokeStyle = i % 3 === 0 ? "rgba(134,239,172,0.28)" : "rgba(4,60,28,0.35)";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x - 4, y);
+      ctx.lineTo(x - 6, y - 8);
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y - 11);
+      ctx.moveTo(x + 4, y);
+      ctx.lineTo(x + 6, y - 8);
+      ctx.stroke();
+    }
+    const flowerColors = ["#fde047", "#f9a8d4", "#ffffff", "#fdba74"];
+    for (let i = 0; i < 26; i++) {
+      const x = rand01(i * 5.3 + 40) * w;
+      const y = rand01(i * 9.1 + 90) * h;
+      ctx.fillStyle = flowerColors[i % flowerColors.length];
+      ctx.beginPath();
+      ctx.arc(x, y, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // soft vignette
+    const vig = ctx.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, h * 0.95);
+    vig.addColorStop(0, "rgba(0,0,0,0)");
+    vig.addColorStop(1, "rgba(0,0,0,0.35)");
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  function drawHole(hole) {
+    const hx = hole.x;
+    const cy = hole.y + 10;
+    const rx = HOLE_RADIUS;
+    const ry = HOLE_RADIUS * 0.55;
+
+    // ground shadow + dirt mound
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.beginPath();
+    ctx.ellipse(hx, cy + 10, rx * 1.4, ry * 1.25, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const mound = ctx.createRadialGradient(hx, cy - 6, rx * 0.4, hx, cy + 4, rx * 1.4);
+    mound.addColorStop(0, "#9a6a3a");
+    mound.addColorStop(0.7, "#7a4f28");
+    mound.addColorStop(1, "#5a3818");
+    ctx.fillStyle = mound;
+    ctx.beginPath();
+    ctx.ellipse(hx, cy + 4, rx * 1.3, ry * 1.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,220,170,0.25)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(hx, cy + 2, rx * 1.3, ry * 1.2, 0, Math.PI * 1.05, Math.PI * 1.95);
+    ctx.stroke();
+
+    // the hole itself, with depth
+    const pit = ctx.createRadialGradient(hx, cy - 4, 2, hx, cy, rx);
+    pit.addColorStop(0, "#0a0603");
+    pit.addColorStop(0.65, "#1c1109");
+    pit.addColorStop(1, "#3a2614");
+    ctx.fillStyle = pit;
+    ctx.beginPath();
+    ctx.ellipse(hx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (hole.active) {
+      const sprite = critterSprites[hole.critter];
+      const rise = easeOutBack(Math.min(1, hole.age / 0.14));
+      const sink = Math.min(1, Math.max(0, hole.timer / 0.12));
+      const lift = Math.min(rise, sink);
+      const s = HOLE_RADIUS * 1.6;
+      const hidden = (1 - lift) * s * 0.95;
+
+      ctx.save();
+      // everything above the hole's centre line, plus the hole opening itself
+      ctx.beginPath();
+      ctx.rect(hx - rx * 2, cy - 400, rx * 4, 400);
+      ctx.ellipse(hx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.clip();
+      if (sprite.loaded) {
+        ctx.drawImage(sprite.img, hx - s / 2, cy - s * 0.78 + hidden, s, s);
+      } else {
+        ctx.fillStyle = "#92400e";
+        ctx.beginPath();
+        ctx.ellipse(hx, cy - 14 + hidden, rx * 0.6, rx * 0.7, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // front lip of the hole drawn over the critter so it really pops *out of* the ground
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#6b4423";
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.ellipse(hx, cy, rx, ry, 0, 0.05 * Math.PI, 0.95 * Math.PI);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,225,180,0.35)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(hx, cy + 2, rx, ry, 0, 0.12 * Math.PI, 0.88 * Math.PI);
+    ctx.stroke();
+    // a few grass blades poking over the front lip
+    ctx.strokeStyle = "#22a04f";
+    ctx.lineWidth = 2;
+    for (let i = -3; i <= 3; i++) {
+      const bx = hx + i * (rx / 3.4);
+      const by = cy + ry * Math.sqrt(Math.max(0, 1 - Math.pow((i * (rx / 3.4)) / rx, 2))) + 3;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx + (i % 2 ? 3 : -3), by - 8 - (Math.abs(i) % 3) * 2);
+      ctx.stroke();
+    }
   }
 
   function draw() {
-    ctx.fillStyle = "#166534";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawLawn();
 
-    for (const hole of holes) {
-      ctx.fillStyle = "#3f2d1d";
+    // back rows first so lower holes overlap upper ones naturally
+    for (const hole of holes) drawHole(hole);
+
+    for (const p of sparks) {
+      ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+      ctx.fillStyle = "#fde047";
       ctx.beginPath();
-      ctx.ellipse(hole.x, hole.y + 10, HOLE_RADIUS, HOLE_RADIUS * 0.55, 0, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
       ctx.fill();
-
-      if (hole.active) {
-        const sprite = critterSprites[hole.critter];
-        if (sprite.loaded) {
-          const s = HOLE_RADIUS * 1.5;
-          ctx.save();
-          ctx.beginPath();
-          ctx.ellipse(hole.x, hole.y + 10, HOLE_RADIUS, HOLE_RADIUS * 0.55, 0, 0, Math.PI * 2);
-          ctx.clip();
-          ctx.drawImage(sprite.img, hole.x - s / 2, hole.y - s * 0.72, s, s);
-          ctx.restore();
-        } else {
-          ctx.fillStyle = "#92400e";
-          ctx.beginPath();
-          ctx.ellipse(hole.x, hole.y - 8, HOLE_RADIUS * 0.6, HOLE_RADIUS * 0.7, 0, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = "#0f172a";
-          ctx.beginPath();
-          ctx.arc(hole.x - 12, hole.y - 15, 4, 0, Math.PI * 2);
-          ctx.arc(hole.x + 12, hole.y - 15, 4, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = "#f472b6";
-          ctx.beginPath();
-          ctx.arc(hole.x, hole.y - 2, 5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
     }
+    ctx.globalAlpha = 1;
 
-    ctx.font = "bold 22px system-ui, sans-serif";
+    ctx.font = "bold 28px system-ui, sans-serif";
     ctx.textAlign = "center";
+    ctx.lineJoin = "round";
     for (const f of floaters) {
-      ctx.fillStyle = `rgba(250, 204, 21, ${Math.max(0, f.life / f.maxLife)})`;
+      const a = Math.max(0, f.life / f.maxLife);
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = `rgba(60, 30, 0, ${a})`;
+      ctx.strokeText("+10", f.x, f.y);
+      ctx.fillStyle = `rgba(253, 224, 71, ${a})`;
       ctx.fillText("+10", f.x, f.y);
     }
   }

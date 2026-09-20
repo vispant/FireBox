@@ -428,65 +428,96 @@ export function createGoalkeeperGame({ canvas, ctx }) {
     ctx.restore();
   }
 
-  // Stadium behind the pitch: sky, a roofed stand packed with a crowd of
-  // colored dots, floodlights with glow, and a segmented advertising strip.
+  // Stadium behind the pitch: sky, a roofed stand packed with little animated
+  // spectators (a gentle crowd wave), floodlights with glow, and ad boards.
   function drawStadium() {
     const w = canvas.width;
     const horizon = canvas.height * 0.34;
 
     const sky = ctx.createLinearGradient(0, 0, 0, horizon);
-    sky.addColorStop(0, "#7dd3fc");
-    sky.addColorStop(1, "#bae6fd");
+    sky.addColorStop(0, "#5aaef0");
+    sky.addColorStop(1, "#bfe6fb");
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, horizon);
 
     const roofTop = horizon * 0.14;
     const standsTop = horizon * 0.3;
 
-    // roof: a dark band with a lighter underside edge, sitting above the stand
+    // roof: dark band with truss lines and a lit underside edge
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, roofTop, w, standsTop - roofTop);
-    ctx.fillStyle = "rgba(148,163,184,0.4)";
+    ctx.strokeStyle = "rgba(148,163,184,0.25)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < w; x += 26) {
+      ctx.beginPath();
+      ctx.moveTo(x, roofTop);
+      ctx.lineTo(x + 13, standsTop - 3);
+      ctx.lineTo(x + 26, roofTop);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(226,232,240,0.5)";
     ctx.fillRect(0, standsTop - 3, w, 3);
 
-    // stand body, shaded darker toward the bottom (closer to pitch level)
+    // stand body, shaded darker toward pitch level
     const standGrad = ctx.createLinearGradient(0, standsTop, 0, horizon);
-    standGrad.addColorStop(0, "#1e293b");
+    standGrad.addColorStop(0, "#243044");
     standGrad.addColorStop(1, "#0f172a");
     ctx.fillStyle = standGrad;
     ctx.fillRect(0, standsTop, w, horizon - standsTop);
 
-    // crowd: more rows, varied dot size/brightness for texture depth
+    // spectators: shoulders + head, bigger the closer the row, colour clumped by "section"
+    const t = performance.now() / 1000;
+    const skins = ["#f5cfa0", "#e0ac69", "#c68642", "#8d5524", "#f1c27d", "#ffdbac"];
+    const shirts = ["#dc2626", "#2563eb", "#f8fafc", "#facc15", "#16a34a", "#f97316", "#7c3aed", "#0ea5e9"];
     const rows = 6;
     for (let r = 0; r < rows; r++) {
-      const y = standsTop + ((horizon - standsTop) * (r + 0.5)) / rows;
-      const count = 58;
-      const dotR = 1.6 + (rows - r) * 0.25;
+      const rowY = standsTop + ((horizon - standsTop) * (r + 0.85)) / rows;
+      const sc = 0.62 + r * 0.14;
+      const count = 44 + r * 2;
+      const spacing = w / count;
       for (let i = 0; i < count; i++) {
-        const x = (w / count) * (i + 0.5) + Math.sin(i * 12.9 + r * 3.1) * 3;
-        const hue = (i * 47 + r * 91) % 360;
-        const light = 42 + (r % 2) * 14 + ((i * 7) % 10);
-        ctx.fillStyle = `hsl(${hue}, 50%, ${light}%)`;
+        const seed = i * 13.37 + r * 7.9;
+        const rnd = Math.abs(Math.sin(seed * 91.7)) % 1;
+        const cheer = rnd > 0.55 ? Math.max(0, Math.sin(t * 3.2 + i * 0.4 + r)) * 2.4 * sc : 0;
+        const x = spacing * (i + 0.5) + Math.sin(seed) * 2;
+        const shirt = rnd > 0.8 ? shirts[Math.floor(rnd * 100) % shirts.length] : shirts[(Math.floor(i / 5) + r * 2) % shirts.length];
+        ctx.fillStyle = shirt;
         ctx.beginPath();
-        ctx.arc(x, y, dotR, 0, Math.PI * 2);
+        ctx.roundRect(x - 5 * sc, rowY - 8 * sc - cheer, 10 * sc, 9 * sc, 3 * sc);
+        ctx.fill();
+        ctx.fillStyle = skins[Math.floor(rnd * 60) % skins.length];
+        ctx.beginPath();
+        ctx.arc(x, rowY - 11.5 * sc - cheer, 3.3 * sc, 0, Math.PI * 2);
         ctx.fill();
       }
+      // dark rail line beneath each row for tiered depth
+      ctx.fillStyle = "rgba(2,6,23,0.55)";
+      ctx.fillRect(0, rowY + 1, w, 2);
     }
+    const crowdShade = ctx.createLinearGradient(0, standsTop, 0, horizon);
+    crowdShade.addColorStop(0, "rgba(2,6,23,0.55)");
+    crowdShade.addColorStop(1, "rgba(2,6,23,0.05)");
+    ctx.fillStyle = crowdShade;
+    ctx.fillRect(0, standsTop, w, horizon - standsTop);
 
     // floodlights with a soft glow and a small bulb cluster
     for (const fx of [w * 0.06, w * 0.94]) {
       const lampY = roofTop - 6;
-      const beam = ctx.createRadialGradient(fx, lampY, 0, fx, lampY, 30);
-      beam.addColorStop(0, "rgba(255,251,235,0.55)");
+      const beam = ctx.createRadialGradient(fx, lampY, 0, fx, lampY, 44);
+      beam.addColorStop(0, "rgba(255,251,235,0.7)");
       beam.addColorStop(1, "rgba(255,251,235,0)");
       ctx.fillStyle = beam;
       ctx.beginPath();
-      ctx.arc(fx, lampY, 30, 0, Math.PI * 2);
+      ctx.arc(fx, lampY, 44, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = "#94a3b8";
       ctx.fillRect(fx - 3, lampY, 6, standsTop - lampY);
-      for (const [ox, oy] of [[-6, -8], [6, -8], [0, -12]]) {
+      for (const [ox, oy] of [
+        [-6, -8],
+        [6, -8],
+        [0, -12],
+      ]) {
         ctx.fillStyle = "#fefce8";
         ctx.beginPath();
         ctx.arc(fx + ox, lampY + oy, 4, 0, Math.PI * 2);
@@ -494,12 +525,18 @@ export function createGoalkeeperGame({ canvas, ctx }) {
       }
     }
 
-    // advertising boards: alternating colored segments, not a flat strip
+    // advertising boards: alternating coloured segments with a bevel and lettering marks
     const boardColors = ["#dc2626", "#2563eb", "#f59e0b", "#16a34a", "#7c3aed"];
     const segW = w / 9;
     for (let i = 0; i < 9; i++) {
+      const bx = i * segW;
       ctx.fillStyle = boardColors[i % boardColors.length];
-      ctx.fillRect(i * segW, horizon - 16, segW - 2, 16);
+      ctx.fillRect(bx, horizon - 16, segW - 2, 16);
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.fillRect(bx, horizon - 16, segW - 2, 3);
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fillRect(bx + segW * 0.2, horizon - 10, segW * 0.42, 3);
+      ctx.fillRect(bx + segW * 0.2, horizon - 6, segW * 0.28, 2);
     }
 
     return horizon;

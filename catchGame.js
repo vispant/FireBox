@@ -329,10 +329,40 @@ export function createCatchGame({ canvas, ctx }) {
     const h = canvas.height;
 
     const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
-    skyGrad.addColorStop(0, "#38bdf8");
-    skyGrad.addColorStop(1, "#bae6fd");
+    skyGrad.addColorStop(0, "#1e90e6");
+    skyGrad.addColorStop(0.55, "#5fc3f5");
+    skyGrad.addColorStop(1, "#c8ecfb");
     ctx.fillStyle = skyGrad;
     ctx.fillRect(0, 0, w, h);
+
+    const sunX = w * 0.84;
+    const sunY = h * 0.18;
+    const halo = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, h * 0.6);
+    halo.addColorStop(0, "rgba(255,247,200,0.8)");
+    halo.addColorStop(0.3, "rgba(255,240,170,0.25)");
+    halo.addColorStop(1, "rgba(255,240,170,0)");
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#fffbd6";
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 30, 0, Math.PI * 2);
+    ctx.fill();
+
+    const hillLayers = [
+      { color: "rgba(96,165,214,0.55)", base: h * 0.86, amp: 32, freq: 0.006, phase: 40 },
+      { color: "rgba(60,130,190,0.6)", base: h * 0.92, amp: 24, freq: 0.009, phase: 210 },
+    ];
+    for (const L of hillLayers) {
+      ctx.fillStyle = L.color;
+      ctx.beginPath();
+      ctx.moveTo(0, h);
+      for (let x = 0; x <= w; x += 10) {
+        ctx.lineTo(x, L.base + Math.sin((x + L.phase) * L.freq) * L.amp + Math.sin((x + L.phase) * L.freq * 2.4) * (L.amp * 0.35));
+      }
+      ctx.lineTo(w, h);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     for (const c of clouds) {
       drawCloud(c.x, c.y, c.scale);
@@ -455,11 +485,17 @@ export function createCatchGame({ canvas, ctx }) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.textAlign = "center";
-    ctx.fillStyle = "#f8fafc";
+    ctx.lineJoin = "round";
     ctx.font = "bold 120px system-ui, sans-serif";
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = "rgba(15,23,42,0.6)";
+    ctx.strokeText(String(Math.ceil(countdown)), canvas.width / 2, canvas.height / 2 + 40);
+    ctx.fillStyle = "#f8fafc";
     ctx.fillText(String(Math.ceil(countdown)), canvas.width / 2, canvas.height / 2 + 40);
 
     ctx.font = "bold 26px system-ui, sans-serif";
+    ctx.lineWidth = 6;
+    ctx.strokeText("Get ready!", canvas.width / 2, canvas.height / 2 + 100);
     ctx.fillText("Get ready!", canvas.width / 2, canvas.height / 2 + 100);
   }
 
@@ -498,9 +534,13 @@ export function createCatchGame({ canvas, ctx }) {
 
     for (const f of floaters) {
       ctx.globalAlpha = Math.min(1, f.life / 15);
-      ctx.fillStyle = f.color;
       ctx.font = f.big ? "bold 34px system-ui, sans-serif" : "bold 20px system-ui, sans-serif";
       ctx.textAlign = "center";
+      ctx.lineJoin = "round";
+      ctx.lineWidth = f.big ? 6 : 4;
+      ctx.strokeStyle = "rgba(15,23,42,0.75)";
+      ctx.strokeText(f.text, f.x, f.y);
+      ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
       ctx.globalAlpha = 1;
     }

@@ -309,3 +309,32 @@ canvas {
   font-size: 0.9rem;
   min-height: 1.2em;
 }
+
+/* Phones: shrink the HUD pills so score, pause and lives fit on one row instead of wrapping over the play area. */
+@media (max-width: 560px) {
+  #hud {
+    top: 10px;
+    gap: 6px;
+    padding: 0 8px;
+    flex-wrap: nowrap;
+  }
+
+  #hudLeft,
+  #hudRight {
+    padding: 7px 11px;
+    font-size: 0.85rem;
+    gap: 4px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #hudLeft {
+    max-width: 58vw;
+  }
+
+  #pauseBtn {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+  }
+}

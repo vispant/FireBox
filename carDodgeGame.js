@@ -389,27 +389,107 @@ export function createCarDodgeGame({ canvas, ctx }) {
     }
   }
 
+  // The Kenney "Flat" tree sprites are pale-blue silhouettes; recolour them once so they read as trees.
+  const tintCache = new Map();
+  function tinted(sprite, color) {
+    const key = sprite.img.src + color;
+    let c = tintCache.get(key);
+    if (!c) {
+      c = document.createElement("canvas");
+      c.width = sprite.img.naturalWidth;
+      c.height = sprite.img.naturalHeight;
+      const g = c.getContext("2d");
+      g.drawImage(sprite.img, 0, 0);
+      g.globalCompositeOperation = "source-in";
+      g.fillStyle = color;
+      g.fillRect(0, 0, c.width, c.height);
+      tintCache.set(key, c);
+    }
+    return c;
+  }
+
+  function rand01(n) {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  function drawScenery(scroll) {
+    const w = canvas.width;
+    const h = canvas.height;
+    const rl = roadLeft();
+    const rw = roadWidth();
+
+    // mown grass verges with alternating stripes that scroll with the road
+    const grass = ctx.createLinearGradient(0, 0, w, 0);
+    grass.addColorStop(0, "#2f6b34");
+    grass.addColorStop(0.5, "#3f8a43");
+    grass.addColorStop(1, "#2f6b34");
+    ctx.fillStyle = grass;
+    ctx.fillRect(0, 0, w, h);
+    const stripeH = 90;
+    const off = ((scroll % (stripeH * 2)) + stripeH * 2) % (stripeH * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    for (let y = -stripeH * 2 + off; y < h; y += stripeH * 2) {
+      ctx.fillRect(0, y, rl, stripeH);
+      ctx.fillRect(rl + rw, y, w - rl - rw, stripeH);
+    }
+
+    // gravel shoulders
+    ctx.fillStyle = "#8b8478";
+    ctx.fillRect(rl - 14, 0, 14, h);
+    ctx.fillRect(rl + rw, 0, 14, h);
+
+    // asphalt, slightly lighter down the middle where tyres polish it
+    const road = ctx.createLinearGradient(rl, 0, rl + rw, 0);
+    road.addColorStop(0, "#3a3e46");
+    road.addColorStop(0.5, "#4a4f58");
+    road.addColorStop(1, "#3a3e46");
+    ctx.fillStyle = road;
+    ctx.fillRect(rl, 0, rw, h);
+
+    // asphalt grain
+    const grainPeriod = 120;
+    const gOff = ((scroll % grainPeriod) + grainPeriod) % grainPeriod;
+    for (let i = 0; i < 46; i++) {
+      const gx = rl + rand01(i * 2.1) * rw;
+      const gy = ((rand01(i * 5.7) * h + gOff * 1.0 + i * 37) % (h + 40)) - 20;
+      ctx.fillStyle = i % 2 ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.10)";
+      ctx.fillRect(gx, gy, 3 + rand01(i) * 5, 2);
+    }
+
+    // red/white rumble kerbs along both edges
+    const kerb = 28;
+    const kOff = ((scroll % (kerb * 2)) + kerb * 2) % (kerb * 2);
+    for (let y = -kerb * 2 + kOff; y < h; y += kerb) {
+      const red = Math.round((y - kOff) / kerb) % 2 === 0;
+      ctx.fillStyle = red ? "#dc2626" : "#f8fafc";
+      ctx.fillRect(rl - 8, y, 8, kerb);
+      ctx.fillRect(rl + rw, y, 8, kerb);
+    }
+
+    // road-edge shading so the asphalt feels raised
+    const edgeShade = ctx.createLinearGradient(rl, 0, rl + 26, 0);
+    edgeShade.addColorStop(0, "rgba(0,0,0,0.35)");
+    edgeShade.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = edgeShade;
+    ctx.fillRect(rl, 0, 26, h);
+    const edgeShade2 = ctx.createLinearGradient(rl + rw, 0, rl + rw - 26, 0);
+    edgeShade2.addColorStop(0, "rgba(0,0,0,0.35)");
+    edgeShade2.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = edgeShade2;
+    ctx.fillRect(rl + rw - 26, 0, 26, h);
+  }
+
   function draw() {
-    ctx.fillStyle = "#3f7a3f";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const dashOffset = (elapsed * currentSpeed()) % 54;
+    drawScenery(elapsed * currentSpeed());
 
     const rl = roadLeft();
     const rw = roadWidth();
-    ctx.fillStyle = "#424750";
-    ctx.fillRect(rl, 0, rw, canvas.height);
-    ctx.strokeStyle = "#fde68a";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(rl, 0);
-    ctx.lineTo(rl, canvas.height);
-    ctx.moveTo(rl + rw, 0);
-    ctx.lineTo(rl + rw, canvas.height);
-    ctx.stroke();
 
-    ctx.strokeStyle = "rgba(226, 232, 240, 0.85)";
+    ctx.strokeStyle = "rgba(240, 244, 250, 0.9)";
     ctx.lineWidth = 5;
     ctx.setLineDash([28, 26]);
-    const dashOffset = (elapsed * currentSpeed()) % 54;
     ctx.lineDashOffset = -dashOffset;
     for (let i = 1; i < LANE_COUNT; i++) {
       const x = rl + (rw / LANE_COUNT) * i;
@@ -419,13 +499,18 @@ export function createCarDodgeGame({ canvas, ctx }) {
       ctx.stroke();
     }
     ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
 
     for (const t of trees) {
       const sprite = treeSprites[t.variant];
       if (!sprite.loaded) continue;
       const w = 46;
       const h = w * (sprite.img.naturalHeight / sprite.img.naturalWidth);
-      ctx.drawImage(sprite.img, t.x - w / 2, t.y - h, w, h);
+      ctx.fillStyle = "rgba(0,0,0,0.22)";
+      ctx.beginPath();
+      ctx.ellipse(t.x + 6, t.y - 2, w * 0.45, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.drawImage(tinted(sprite, t.variant % 2 ? "#1f6b3a" : "#2a8a48"), t.x - w / 2, t.y - h, w, h);
     }
 
     ctx.strokeStyle = boostHeld ? "rgba(251, 191, 36, 0.7)" : "rgba(255,255,255,0.5)";
@@ -440,9 +525,17 @@ export function createCarDodgeGame({ canvas, ctx }) {
 
     for (const c of coins) {
       if (c.taken) continue;
+      const halo = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, COIN_RADIUS * 2.2);
+      halo.addColorStop(0, "rgba(255,220,80,0.45)");
+      halo.addColorStop(1, "rgba(255,220,80,0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, COIN_RADIUS * 2.2, 0, Math.PI * 2);
+      ctx.fill();
       if (coinSprite.loaded) {
         const s = COIN_RADIUS * 2.4;
-        ctx.drawImage(coinSprite.img, c.x - s / 2, c.y - s / 2, s, s);
+        const spin = Math.max(0.3, Math.abs(Math.cos(performance.now() / 320 + c.y * 0.02)));
+        ctx.drawImage(coinSprite.img, c.x - (s * spin) / 2, c.y - s / 2, s * spin, s);
       } else {
         ctx.fillStyle = "#fbbf24";
         ctx.beginPath();
@@ -458,6 +551,10 @@ export function createCarDodgeGame({ canvas, ctx }) {
     ctx.font = "bold 22px system-ui, sans-serif";
     for (const f of floaters) {
       ctx.globalAlpha = Math.max(0, Math.min(1, f.life / 300));
+      ctx.lineJoin = "round";
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "rgba(15,23,42,0.85)";
+      ctx.strokeText(f.text, f.x, f.y);
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
       ctx.globalAlpha = 1;

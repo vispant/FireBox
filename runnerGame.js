@@ -76,6 +76,27 @@ function upgradeCost(level) {
   return 50 + level * 50;
 }
 
+// The Kenney "Flat" scenery sprites are single pale-blue silhouettes; recolour
+// them once so mountains, hills and trees read as distinct layers with depth.
+const tintCache = new Map();
+function tinted(sprite, color) {
+  if (!sprite.loaded) return null;
+  const key = sprite.img.src + color;
+  let c = tintCache.get(key);
+  if (!c) {
+    c = document.createElement("canvas");
+    c.width = sprite.img.naturalWidth;
+    c.height = sprite.img.naturalHeight;
+    const g = c.getContext("2d");
+    g.drawImage(sprite.img, 0, 0);
+    g.globalCompositeOperation = "source-in";
+    g.fillStyle = color;
+    g.fillRect(0, 0, c.width, c.height);
+    tintCache.set(key, c);
+  }
+  return c;
+}
+
 export function createRunnerGame({ canvas, ctx }) {
   let saveData = loadSaveData();
   let best = 0;
@@ -333,8 +354,8 @@ export function createRunnerGame({ canvas, ctx }) {
       const y = groundY() - h + 46;
       if (m.x + w / 2 < 0 || m.x - w / 2 > canvas.width) continue;
       ctx.save();
-      ctx.globalAlpha = 0.6;
-      ctx.drawImage(sprite.img, m.x - w / 2, y, w, h);
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(tinted(sprite, m.variant % 2 ? "#86a9d6" : "#7c9fce") || sprite.img, m.x - w / 2, y, w, h);
       ctx.restore();
     }
   }
@@ -347,7 +368,7 @@ export function createRunnerGame({ canvas, ctx }) {
     const offset = ((hillScrollX % tileW) + tileW) % tileW;
     let x = -offset;
     while (x < canvas.width) {
-      ctx.drawImage(hillSprite.img, x, y, tileW, tileH);
+      ctx.drawImage(tinted(hillSprite, "#74c26e") || hillSprite.img, x, y, tileW, tileH);
       x += tileW;
     }
   }
@@ -360,7 +381,7 @@ export function createRunnerGame({ canvas, ctx }) {
       const h = Math.min(220, w * (sprite.img.naturalHeight / sprite.img.naturalWidth));
       const y = groundY() - h + 12;
       if (t.x + w / 2 < 0 || t.x - w / 2 > canvas.width) continue;
-      ctx.drawImage(sprite.img, t.x - w / 2, y, w, h);
+      ctx.drawImage(tinted(sprite, t.variant % 2 ? "#2f8f4e" : "#3aa35c") || sprite.img, t.x - w / 2, y, w, h);
     }
   }
 
@@ -393,32 +414,154 @@ export function createRunnerGame({ canvas, ctx }) {
     }
   }
 
-  function draw() {
-    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    grad.addColorStop(0, "#8ecdf5");
-    grad.addColorStop(1, "#eaf6fb");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  function rand01(n) {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  }
 
+  function drawSkyBackdrop() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const gy = groundY();
+    const grad = ctx.createLinearGradient(0, 0, 0, gy);
+    grad.addColorStop(0, "#5eb4f0");
+    grad.addColorStop(0.6, "#a9dcf7");
+    grad.addColorStop(1, "#cfe9f8");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // sun + halo
+    const sx = w * 0.78;
+    const sy = gy * 0.28;
+    const halo = ctx.createRadialGradient(sx, sy, 0, sx, sy, gy * 0.7);
+    halo.addColorStop(0, "rgba(255,246,196,0.85)");
+    halo.addColorStop(0.3, "rgba(255,240,170,0.28)");
+    halo.addColorStop(1, "rgba(255,240,170,0)");
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, 0, w, gy);
+    ctx.fillStyle = "#fffbd6";
+    ctx.beginPath();
+    ctx.arc(sx, sy, 26, 0, Math.PI * 2);
+    ctx.fill();
+
+    // slow parallax clouds built from overlapping circles
+    const drift = hillScrollX * 0.18;
+    for (let i = 0; i < 6; i++) {
+      const span = w + 320;
+      const cx = (((rand01(i * 3.3) * span - drift * (0.6 + rand01(i) * 0.5)) % span) + span) % span - 160;
+      const cy = 40 + rand01(i * 8.1) * gy * 0.42;
+      const sc = 0.7 + rand01(i * 2.7) * 0.7;
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 20 * sc, 0, Math.PI * 2);
+      ctx.arc(cx + 24 * sc, cy - 10 * sc, 26 * sc, 0, Math.PI * 2);
+      ctx.arc(cx + 54 * sc, cy, 20 * sc, 0, Math.PI * 2);
+      ctx.arc(cx + 26 * sc, cy + 6 * sc, 22 * sc, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawGround() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const gy = groundY();
+    const scroll = hillScrollX / 0.4; // world scroll (hills move at 0.4x the world)
+
+    const grass = ctx.createLinearGradient(0, gy, 0, gy + 22);
+    grass.addColorStop(0, "#7ed957");
+    grass.addColorStop(1, "#4fae3f");
+    ctx.fillStyle = grass;
+    ctx.fillRect(0, gy, w, 22);
+
+    const dirt = ctx.createLinearGradient(0, gy + 22, 0, h);
+    dirt.addColorStop(0, "#a47148");
+    dirt.addColorStop(1, "#6e4626");
+    ctx.fillStyle = dirt;
+    ctx.fillRect(0, gy + 22, w, h - gy - 22);
+
+    // grass fringe hanging over the dirt
+    ctx.fillStyle = "#4fae3f";
+    ctx.beginPath();
+    ctx.moveTo(0, gy + 20);
+    for (let x = 0; x <= w; x += 12) {
+      ctx.lineTo(x, gy + 22 + 5 + Math.sin((x + scroll) * 0.09) * 3);
+      ctx.lineTo(x + 6, gy + 20);
+    }
+    ctx.lineTo(w, gy + 20);
+    ctx.closePath();
+    ctx.fill();
+
+    // bright edge highlight along the top of the grass
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fillRect(0, gy, w, 2);
+
+    // scrolling grass blades on the surface
+    ctx.strokeStyle = "rgba(38,120,40,0.55)";
+    ctx.lineWidth = 2;
+    const period = 34;
+    const off = ((scroll % period) + period) % period;
+    for (let x = -off; x < w + period; x += period) {
+      ctx.beginPath();
+      ctx.moveTo(x, gy + 1);
+      ctx.lineTo(x - 3, gy - 7);
+      ctx.moveTo(x + 5, gy + 1);
+      ctx.lineTo(x + 6, gy - 9);
+      ctx.moveTo(x + 10, gy + 1);
+      ctx.lineTo(x + 13, gy - 6);
+      ctx.stroke();
+    }
+
+    // pebbles and roots in the dirt, scrolling with the world
+    const dirtPeriod = 90;
+    const dOff = ((scroll % dirtPeriod) + dirtPeriod) % dirtPeriod;
+    for (let i = -1; i < w / dirtPeriod + 2; i++) {
+      const bx = i * dirtPeriod - dOff;
+      const idx = i + Math.floor(scroll / dirtPeriod);
+      const py = gy + 34 + rand01(idx * 1.9) * (h - gy - 50);
+      ctx.fillStyle = "rgba(0,0,0,0.16)";
+      ctx.beginPath();
+      ctx.ellipse(bx + rand01(idx) * 60, py, 7 + rand01(idx * 3.1) * 6, 4 + rand01(idx * 5.3) * 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,230,190,0.12)";
+      ctx.beginPath();
+      ctx.ellipse(bx + rand01(idx) * 60 - 2, py - 1.5, 4, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawShadow(cx, width, alpha) {
+    ctx.fillStyle = `rgba(20,50,20,${alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(cx, groundY() + 5, width / 2, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function draw() {
+    drawSkyBackdrop();
     drawMountains();
     drawHills();
-
-    ctx.fillStyle = "#8bd17a";
-    ctx.fillRect(0, groundY(), canvas.width, canvas.height - groundY());
-    ctx.strokeStyle = "#5fae5a";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(0, groundY());
-    ctx.lineTo(canvas.width, groundY());
-    ctx.stroke();
+    drawGround();
 
     drawTrees();
 
+    for (const o of obstacles) {
+      if (!o.overhead) drawShadow(o.x + o.width / 2, o.width * 1.1, 0.28);
+    }
+
+    const t = performance.now() / 1000;
     for (const c of coins) {
       if (c.taken) continue;
+      const halo = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.r * 2.2);
+      halo.addColorStop(0, "rgba(255,220,80,0.45)");
+      halo.addColorStop(1, "rgba(255,220,80,0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r * 2.2, 0, Math.PI * 2);
+      ctx.fill();
       if (coinSprite.loaded) {
         const s = c.r * 2.4;
-        ctx.drawImage(coinSprite.img, c.x - s / 2, c.y - s / 2, s, s);
+        const spin = Math.max(0.25, Math.abs(Math.cos(t * 3 + c.x * 0.01)));
+        ctx.drawImage(coinSprite.img, c.x - (s * spin) / 2, c.y - s / 2, s * spin, s);
       } else {
         ctx.fillStyle = "#fbbf24";
         ctx.beginPath();
@@ -437,7 +580,10 @@ export function createRunnerGame({ canvas, ctx }) {
       }
     }
 
-    drawPlayer(playerHitbox());
+    const box = playerHitbox();
+    const lift = Math.max(0, groundY() - box.bottom);
+    drawShadow((box.left + box.right) / 2, 46 * Math.max(0.5, 1 - lift / 260), Math.max(0.1, 0.32 - lift / 700));
+    drawPlayer(box);
   }
 
   function isOver() {

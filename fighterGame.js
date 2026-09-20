@@ -935,27 +935,50 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
     fx.save();
     if (shake > 0.5) fx.translate(frameShakeX, frameShakeY);
 
+    fx.lineJoin = "round";
     for (const o of opponents) {
       if (o.phase === "dying") continue;
+      if (o.x < -20 || o.x > canvas.width + 20) continue; // still running in from off-screen
       const barW = o.isBoss ? 240 : 150;
       const barH = 14;
-      const bx = o.x - barW / 2;
+      const cx = Math.max(barW / 2 + 6, Math.min(canvas.width - barW / 2 - 6, o.x));
+      const bx = cx - barW / 2;
       const by = o.y - HEAD_TOP_OFFSET - 34;
-      fx.textAlign = "center";
-      fx.fillStyle = o.isBoss ? "#fbbf24" : "#fff";
-      fx.font = `bold ${o.isBoss ? 18 : 14}px system-ui, sans-serif`;
-      fx.fillText(o.isBoss ? `★ ${o.name} ★` : o.name, o.x, by - 8);
 
-      fx.fillStyle = "rgba(15,23,42,0.7)";
-      fx.fillRect(bx, by, barW, barH);
-      fx.fillStyle = "#ef4444";
-      fx.fillRect(bx, by, barW * Math.max(0, o.health / o.maxHealth), barH);
-      fx.strokeStyle = "rgba(255,255,255,0.5)";
-      fx.lineWidth = 1;
-      fx.strokeRect(bx, by, barW, barH);
+      fx.textAlign = "center";
+      fx.font = `bold ${o.isBoss ? 18 : 14}px system-ui, sans-serif`;
+      const nameText = o.isBoss ? `★ ${o.name} ★` : o.name;
+      fx.lineWidth = 4;
+      fx.strokeStyle = "rgba(15,23,42,0.85)";
+      fx.strokeText(nameText, cx, by - 8);
+      fx.fillStyle = o.isBoss ? "#fbbf24" : "#fff";
+      fx.fillText(nameText, cx, by - 8);
+
+      const frac = Math.max(0, o.health / o.maxHealth);
+      fx.fillStyle = "rgba(15,23,42,0.75)";
+      fx.beginPath();
+      fx.roundRect(bx, by, barW, barH, 7);
+      fx.fill();
+      if (frac > 0) {
+        const hg = fx.createLinearGradient(0, by, 0, by + barH);
+        hg.addColorStop(0, "#f87171");
+        hg.addColorStop(1, "#b91c1c");
+        fx.fillStyle = hg;
+        fx.beginPath();
+        fx.roundRect(bx + 1.5, by + 1.5, Math.max(6, (barW - 3) * frac), barH - 3, 5);
+        fx.fill();
+        fx.fillStyle = "rgba(255,255,255,0.28)";
+        fx.beginPath();
+        fx.roundRect(bx + 3, by + 2.5, Math.max(4, (barW - 6) * frac), 3, 2);
+        fx.fill();
+      }
+      fx.strokeStyle = "rgba(255,255,255,0.55)";
+      fx.lineWidth = 1.5;
+      fx.beginPath();
+      fx.roundRect(bx, by, barW, barH, 7);
+      fx.stroke();
 
       if (o.phase === "telegraph") {
-        fx.fillStyle = "#fbbf24";
         fx.font = "bold 16px system-ui, sans-serif";
         const label =
           o.attackType === "kick"
@@ -965,7 +988,11 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
             : o.punchHeight === "head"
               ? "HEAD PUNCH!"
               : "PUNCH!";
-        fx.fillText(label, o.x, by - (o.isBoss ? 30 : 26));
+        fx.lineWidth = 5;
+        fx.strokeStyle = "rgba(15,23,42,0.9)";
+        fx.strokeText(label, cx, by - (o.isBoss ? 30 : 26));
+        fx.fillStyle = "#fbbf24";
+        fx.fillText(label, cx, by - (o.isBoss ? 30 : 26));
       }
     }
 
@@ -1002,9 +1029,13 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
 
     for (const f of floaters) {
       fx.globalAlpha = Math.min(1, f.life / 20);
-      fx.fillStyle = f.color;
-      fx.font = "bold 20px system-ui, sans-serif";
+      fx.font = "bold 22px system-ui, sans-serif";
       fx.textAlign = "center";
+      fx.lineJoin = "round";
+      fx.lineWidth = 5;
+      fx.strokeStyle = "rgba(15,23,42,0.85)";
+      fx.strokeText(f.text, f.x, f.y);
+      fx.fillStyle = f.color;
       fx.fillText(f.text, f.x, f.y);
       fx.globalAlpha = 1;
     }
@@ -1020,27 +1051,37 @@ export function createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, f
     const ph = 20;
     const px = (canvas.width - pw) / 2;
     const py = canvas.height - 40;
-    fx.fillStyle = "rgba(15,23,42,0.7)";
-    fx.fillRect(px, py, pw, ph);
-    fx.fillStyle = "#4ade80";
-    fx.fillRect(px, py, pw * Math.max(0, player.health / player.maxHealth), ph);
-    fx.strokeStyle = "rgba(255,255,255,0.5)";
-    fx.strokeRect(px, py, pw, ph);
-    fx.fillStyle = "#fff";
+    const hpFrac = Math.max(0, player.health / player.maxHealth);
+    fx.fillStyle = "rgba(15,23,42,0.75)";
+    fx.beginPath();
+    fx.roundRect(px, py, pw, ph, 10);
+    fx.fill();
+    if (hpFrac > 0) {
+      const g = fx.createLinearGradient(0, py, 0, py + ph);
+      g.addColorStop(0, hpFrac > 0.3 ? "#86efac" : "#fca5a5");
+      g.addColorStop(1, hpFrac > 0.3 ? "#16a34a" : "#b91c1c");
+      fx.fillStyle = g;
+      fx.beginPath();
+      fx.roundRect(px + 2, py + 2, Math.max(8, (pw - 4) * hpFrac), ph - 4, 8);
+      fx.fill();
+      fx.fillStyle = "rgba(255,255,255,0.25)";
+      fx.beginPath();
+      fx.roundRect(px + 5, py + 4, Math.max(6, (pw - 10) * hpFrac), 4, 2);
+      fx.fill();
+    }
+    fx.strokeStyle = "rgba(255,255,255,0.6)";
+    fx.lineWidth = 1.5;
+    fx.beginPath();
+    fx.roundRect(px, py, pw, ph, 10);
+    fx.stroke();
     fx.textAlign = "center";
     fx.font = "bold 14px system-ui, sans-serif";
+    fx.lineJoin = "round";
+    fx.lineWidth = 4;
+    fx.strokeStyle = "rgba(15,23,42,0.85)";
+    fx.strokeText(`HP ${Math.ceil(player.health)}/${player.maxHealth}`, canvas.width / 2, py + 15);
+    fx.fillStyle = "#fff";
     fx.fillText(`HP ${Math.ceil(player.health)}/${player.maxHealth}`, canvas.width / 2, py + 15);
-
-    // Temporary calibration aid: marks where characters' feet are pinned to
-    // (groundBaselineY() is derived from this same line). Ask to remove once
-    // floor position is confirmed correct.
-    const floorY = canvas.height - FLOOR_LINE_MARGIN;
-    fx.strokeStyle = "#ef4444";
-    fx.lineWidth = 2;
-    fx.beginPath();
-    fx.moveTo(0, floorY);
-    fx.lineTo(canvas.width, floorY);
-    fx.stroke();
 
     drawFaceEmoji(fx, landmarks, canvas.width, canvas.height);
   }

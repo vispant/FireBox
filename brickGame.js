@@ -48,6 +48,7 @@ export function createBrickGame({ canvas, ctx }) {
   let bricks = [];
   let particles = [];
   let floaters = [];
+  let trail = [];
   let score = 0;
   let best = loadBest();
   let lives = LIVES_START;
@@ -93,6 +94,7 @@ export function createBrickGame({ canvas, ctx }) {
   function resetBallOnPaddle() {
     ball = { x: paddleX, y: canvas.height - 60 - BALL_RADIUS - 4, vx: 0, vy: 0 };
     ballLaunched = false;
+    trail = [];
   }
 
   function launchBall() {
@@ -179,6 +181,8 @@ export function createBrickGame({ canvas, ctx }) {
 
     ball.x += ball.vx * dtSec;
     ball.y += ball.vy * dtSec;
+    trail.push({ x: ball.x, y: ball.y });
+    if (trail.length > 9) trail.shift();
 
     if (ball.x - BALL_RADIUS < 0) {
       ball.x = BALL_RADIUS;
@@ -239,25 +243,147 @@ export function createBrickGame({ canvas, ctx }) {
     }
   }
 
-  function draw() {
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  function rand01(n) {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  }
 
-    for (const brick of bricks) {
-      if (!brick.alive) continue;
-      ctx.fillStyle = brick.color;
-      ctx.fillRect(brick.x, brick.y, brick.w, brick.h);
+  function shade(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = Math.max(0, Math.min(255, (n >> 16) + amt));
+    const g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amt));
+    const b = Math.max(0, Math.min(255, (n & 255) + amt));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function drawBackdrop() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, "#0b1226");
+    bg.addColorStop(0.55, "#101a36");
+    bg.addColorStop(1, "#1b1740");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    // soft nebula glows
+    const glowA = ctx.createRadialGradient(w * 0.2, h * 0.25, 0, w * 0.2, h * 0.25, h * 0.6);
+    glowA.addColorStop(0, "rgba(96,165,250,0.12)");
+    glowA.addColorStop(1, "rgba(96,165,250,0)");
+    ctx.fillStyle = glowA;
+    ctx.fillRect(0, 0, w, h);
+    const glowB = ctx.createRadialGradient(w * 0.85, h * 0.7, 0, w * 0.85, h * 0.7, h * 0.6);
+    glowB.addColorStop(0, "rgba(244,114,182,0.10)");
+    glowB.addColorStop(1, "rgba(244,114,182,0)");
+    ctx.fillStyle = glowB;
+    ctx.fillRect(0, 0, w, h);
+
+    // twinkling stars
+    const t = performance.now() / 1000;
+    for (let i = 0; i < 70; i++) {
+      const x = rand01(i * 2.3) * w;
+      const y = rand01(i * 5.9 + 3) * h;
+      const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * (0.6 + rand01(i) * 1.4) + i));
+      ctx.fillStyle = `rgba(226,232,240,${0.12 + 0.35 * tw})`;
+      ctx.beginPath();
+      ctx.arc(x, y, 0.8 + rand01(i * 1.7) * 1.2, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    const paddleY = canvas.height - 60;
-    const paddleGrad = ctx.createLinearGradient(0, paddleY, 0, paddleY + PADDLE_HEIGHT);
-    paddleGrad.addColorStop(0, "#f1f5f9");
-    paddleGrad.addColorStop(1, "#94a3b8");
-    ctx.fillStyle = paddleGrad;
+    // playfield rails
+    const rail = ctx.createLinearGradient(0, 0, w, 0);
+    rail.addColorStop(0, "rgba(96,165,250,0.5)");
+    rail.addColorStop(0.5, "rgba(167,139,250,0.35)");
+    rail.addColorStop(1, "rgba(244,114,182,0.5)");
+    ctx.fillStyle = rail;
+    ctx.fillRect(0, 0, 3, h);
+    ctx.fillRect(w - 3, 0, 3, h);
+  }
+
+  function drawBrick(brick) {
+    const { x, y, w, h, color } = brick;
+    const r = 5;
+    // drop shadow
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
     ctx.beginPath();
-    ctx.roundRect(paddleX - PADDLE_WIDTH / 2, paddleY, PADDLE_WIDTH, PADDLE_HEIGHT, PADDLE_HEIGHT / 2);
+    ctx.roundRect(x + 1, y + 3, w, h, r);
     ctx.fill();
 
+    const g = ctx.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, shade(color, 40));
+    g.addColorStop(0.5, color);
+    g.addColorStop(1, shade(color, -45));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+
+    // glossy highlight along the top edge
+    ctx.fillStyle = "rgba(255,255,255,0.28)";
+    ctx.beginPath();
+    ctx.roundRect(x + 3, y + 2, w - 6, h * 0.32, 3);
+    ctx.fill();
+
+    // crisp outline
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, r);
+    ctx.stroke();
+  }
+
+  function draw() {
+    drawBackdrop();
+
+    for (const brick of bricks) {
+      if (brick.alive) drawBrick(brick);
+    }
+
+    // paddle: shadow, metallic body, coloured end caps, glossy top
+    const paddleY = canvas.height - 60;
+    const px = paddleX - PADDLE_WIDTH / 2;
+    const glow = ctx.createRadialGradient(paddleX, paddleY + PADDLE_HEIGHT, 0, paddleX, paddleY + PADDLE_HEIGHT, PADDLE_WIDTH * 0.8);
+    glow.addColorStop(0, "rgba(96,165,250,0.35)");
+    glow.addColorStop(1, "rgba(96,165,250,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(paddleX, paddleY + PADDLE_HEIGHT, PADDLE_WIDTH * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    const paddleGrad = ctx.createLinearGradient(0, paddleY, 0, paddleY + PADDLE_HEIGHT);
+    paddleGrad.addColorStop(0, "#f8fafc");
+    paddleGrad.addColorStop(0.45, "#cbd5e1");
+    paddleGrad.addColorStop(1, "#64748b");
+    ctx.fillStyle = paddleGrad;
+    ctx.beginPath();
+    ctx.roundRect(px, paddleY, PADDLE_WIDTH, PADDLE_HEIGHT, PADDLE_HEIGHT / 2);
+    ctx.fill();
+    ctx.fillStyle = "#60a5fa";
+    ctx.beginPath();
+    ctx.roundRect(px, paddleY, 16, PADDLE_HEIGHT, PADDLE_HEIGHT / 2);
+    ctx.roundRect(px + PADDLE_WIDTH - 16, paddleY, 16, PADDLE_HEIGHT, PADDLE_HEIGHT / 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.beginPath();
+    ctx.roundRect(px + 14, paddleY + 2, PADDLE_WIDTH - 28, 4, 2);
+    ctx.fill();
+
+    // ball trail + glow
+    for (let i = 0; i < trail.length; i++) {
+      const tp = trail[i];
+      const a = (i + 1) / trail.length;
+      ctx.fillStyle = `rgba(253,224,71,${0.18 * a})`;
+      ctx.beginPath();
+      ctx.arc(tp.x, tp.y, BALL_RADIUS * (0.5 + 0.6 * a), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const halo = ctx.createRadialGradient(ball.x, ball.y, 0, ball.x, ball.y, BALL_RADIUS * 3);
+    halo.addColorStop(0, "rgba(253,224,71,0.5)");
+    halo.addColorStop(1, "rgba(253,224,71,0)");
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, BALL_RADIUS * 3, 0, Math.PI * 2);
+    ctx.fill();
     if (ballSprite.loaded) {
       const s = BALL_RADIUS * 2.3;
       ctx.drawImage(ballSprite.img, ball.x - s / 2, ball.y - s / 2, s, s);
@@ -278,21 +404,30 @@ export function createBrickGame({ canvas, ctx }) {
     }
 
     ctx.textAlign = "center";
-    ctx.font = "bold 20px system-ui, sans-serif";
+    ctx.font = "bold 22px system-ui, sans-serif";
+    ctx.lineJoin = "round";
     for (const f of floaters) {
-      ctx.globalAlpha = Math.max(0, Math.min(1, f.life / 300));
+      const a = Math.max(0, Math.min(1, f.life / 300));
+      ctx.globalAlpha = a;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "rgba(15,23,42,0.85)";
+      ctx.strokeText(f.text, f.x, f.y);
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
       ctx.globalAlpha = 1;
     }
 
     if (!ballLaunched && !gameOver) {
-      ctx.fillStyle = "rgba(15, 23, 42, 0.5)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#f8fafc";
-      ctx.font = "bold 24px system-ui, sans-serif";
+      const pulse = 0.65 + 0.35 * Math.sin(performance.now() / 260);
       ctx.textAlign = "center";
-      ctx.fillText("Click to launch", canvas.width / 2, canvas.height / 2);
+      ctx.font = "bold 24px system-ui, sans-serif";
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = "rgba(15,23,42,0.85)";
+      ctx.globalAlpha = pulse;
+      ctx.strokeText("Click to launch", canvas.width / 2, canvas.height * 0.62);
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillText("Click to launch", canvas.width / 2, canvas.height * 0.62);
+      ctx.globalAlpha = 1;
     }
   }
 
