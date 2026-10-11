@@ -104,6 +104,18 @@ function getPlayerName() {
   return currentUser?.user_metadata?.name || currentUser?.email || "Guest";
 }
 
+// Full standalone web apps (built elsewhere, e.g. Google AI Studio) that don't
+// use the shared canvas game loop at all -- shown via <iframe> instead of the
+// reset/update/draw interface every canvas game implements.
+const webGames = [
+  {
+    id: "sovereign-chess",
+    title: "Sovereign Chess",
+    description: "A polished 2D chess arena with five AI bot personalities, tutorials, and an endgame trainer.",
+    url: "https://sovereign-chess.ai.studio",
+  },
+];
+
 const normalGames = [
   createFlappyGame({ canvas, ctx }),
   createWhackGame({ canvas, ctx }),
@@ -391,7 +403,57 @@ function renderHub() {
           <span>Classic games you play with your keyboard or mouse — no camera needed.</span>
         </div>
       </button>
+      <button class="game-card" data-action="open-web-games">
+        <div class="card-body">
+          <strong>🌐 Web Games</strong>
+          <span>Standalone games and apps built elsewhere, played right here.</span>
+        </div>
+      </button>
     </div>
+  `;
+}
+
+function renderWebGamesMenu() {
+  overlay.innerHTML = `
+    <h1>Web Games</h1>
+    <button class="auth-toggle" type="button" data-action="back-to-hub">← Back</button>
+    <p>Full standalone apps built outside FireBox.</p>
+    <div class="game-grid">
+      ${webGames
+        .map(
+          (g) => `
+        <button class="game-card" data-action="open-web-game" data-web-id="${g.id}">
+          <div class="card-body">
+            <strong>${escapeHtml(g.title)}</strong>
+            <span>${escapeHtml(g.description)}</span>
+          </div>
+        </button>`
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function showWebGamesMenu() {
+  setScreen("menu");
+  overlay.classList.remove("hidden");
+  renderWebGamesMenu();
+}
+
+function playWebGame(id) {
+  const webGame = webGames.find((g) => g.id === id);
+  if (!webGame) return;
+  overlay.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;width:100%;max-width:1100px;">
+      <button class="auth-toggle" type="button" data-action="back-to-web-games">← Back</button>
+      <h1 style="margin:0;font-size:1.4rem;flex:1;text-align:left;">${escapeHtml(webGame.title)}</h1>
+    </div>
+    <iframe
+      src="${webGame.url}"
+      title="${escapeHtml(webGame.title)}"
+      style="width:100%;max-width:1100px;flex:1;min-height:0;border:1px solid #334155;border-radius:12px;background:#0f172a;"
+      allow="fullscreen"
+    ></iframe>
   `;
 }
 
@@ -779,6 +841,12 @@ overlay.addEventListener("click", (e) => {
     startCameraGames();
   } else if (action === "open-normal-games") {
     openNormalGames();
+  } else if (action === "open-web-games") {
+    showWebGamesMenu();
+  } else if (action === "open-web-game") {
+    playWebGame(btn.dataset.webId);
+  } else if (action === "back-to-web-games") {
+    showWebGamesMenu();
   } else if (action === "back-to-hub") {
     exitToHub();
   } else if (action === "select-game") {
