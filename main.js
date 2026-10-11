@@ -112,6 +112,7 @@ const webGames = [
     id: "sovereign-chess",
     title: "Sovereign Chess",
     description: "A polished 2D chess arena with five AI bot personalities, tutorials, and an endgame trainer.",
+    thumbnail: "Asset/sovereign_chess_Thumbnail.png",
     url: "https://sovereign-chess.ai.studio",
   },
 ];
@@ -736,6 +737,7 @@ function renderNormalMenu() {
         .map(
           (g) => `
         <button class="game-card" data-action="open-web-game" data-web-id="${g.id}">
+          ${g.thumbnail ? `<img class="card-thumb" src="${g.thumbnail}" alt="" />` : ""}
           <div class="card-body">
             <strong>${escapeHtml(g.title)}</strong>
             <span>${escapeHtml(g.description)}</span>
