@@ -403,49 +403,21 @@ function renderHub() {
           <span>Classic games you play with your keyboard or mouse — no camera needed.</span>
         </div>
       </button>
-      <button class="game-card" data-action="open-web-games">
-        <div class="card-body">
-          <strong>🌐 Web Games</strong>
-          <span>Standalone games and apps built elsewhere, played right here.</span>
-        </div>
-      </button>
     </div>
   `;
 }
 
-function renderWebGamesMenu() {
-  overlay.innerHTML = `
-    <h1>Web Games</h1>
-    <button class="auth-toggle" type="button" data-action="back-to-hub">← Back</button>
-    <p>Full standalone apps built outside FireBox.</p>
-    <div class="game-grid">
-      ${webGames
-        .map(
-          (g) => `
-        <button class="game-card" data-action="open-web-game" data-web-id="${g.id}">
-          <div class="card-body">
-            <strong>${escapeHtml(g.title)}</strong>
-            <span>${escapeHtml(g.description)}</span>
-          </div>
-        </button>`
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function showWebGamesMenu() {
-  setScreen("menu");
-  overlay.classList.remove("hidden");
-  renderWebGamesMenu();
-}
-
+// Full standalone apps (e.g. Google AI Studio builds) don't use the shared
+// canvas game loop, so this skips reset/update/draw entirely and just shows
+// the app in an iframe. Launched from a card in the Normal Games list.
 function playWebGame(id) {
   const webGame = webGames.find((g) => g.id === id);
   if (!webGame) return;
+  setScreen("menu");
+  overlay.classList.remove("hidden");
   overlay.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;width:100%;max-width:1100px;">
-      <button class="auth-toggle" type="button" data-action="back-to-web-games">← Back</button>
+      <button class="auth-toggle" type="button" data-action="open-normal-games">← Back</button>
       <h1 style="margin:0;font-size:1.4rem;flex:1;text-align:left;">${escapeHtml(webGame.title)}</h1>
     </div>
     <iframe
@@ -760,6 +732,17 @@ function renderNormalMenu() {
         </button>`
         )
         .join("")}
+      ${webGames
+        .map(
+          (g) => `
+        <button class="game-card" data-action="open-web-game" data-web-id="${g.id}">
+          <div class="card-body">
+            <strong>${escapeHtml(g.title)}</strong>
+            <span>${escapeHtml(g.description)}</span>
+          </div>
+        </button>`
+        )
+        .join("")}
     </div>
   `;
 }
@@ -841,12 +824,8 @@ overlay.addEventListener("click", (e) => {
     startCameraGames();
   } else if (action === "open-normal-games") {
     openNormalGames();
-  } else if (action === "open-web-games") {
-    showWebGamesMenu();
   } else if (action === "open-web-game") {
     playWebGame(btn.dataset.webId);
-  } else if (action === "back-to-web-games") {
-    showWebGamesMenu();
   } else if (action === "back-to-hub") {
     exitToHub();
   } else if (action === "select-game") {
