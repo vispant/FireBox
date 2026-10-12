@@ -414,6 +414,8 @@ function renderHub() {
 function playWebGame(id) {
   const webGame = webGames.find((g) => g.id === id);
   if (!webGame) return;
+  activeGame = null;
+  beginGameSession(webGame.id);
   setScreen("menu");
   overlay.classList.remove("hidden");
   overlay.innerHTML = `
