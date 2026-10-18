@@ -363,7 +363,10 @@ export function createFighter3D(canvasEl) {
   let renderer = null;
   let webglOk = true;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas: canvasEl, alpha: true, antialias: true });
+    // powerPreference asks hybrid-graphics laptops to use the discrete GPU
+    // instead of defaulting to the power-saving integrated one, which can
+    // otherwise cap the frame rate well below what the hardware can do.
+    renderer = new THREE.WebGLRenderer({ canvas: canvasEl, alpha: true, antialias: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(getRenderScale());
   } catch (err) {
     console.warn("WebGL unavailable, 3D characters disabled:", err);

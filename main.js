@@ -3,7 +3,7 @@ import {
   FilesetResolver,
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
 import { createCatchGame } from "./catchGame.js?v=20";
-import { createFighterGame } from "./fighterGame.js?v=17";
+import { createFighterGame } from "./fighterGame.js?v=18";
 import { createGoalkeeperGame } from "./goalkeeperGame.js?v=6";
 import { createPenaltyKicksGame } from "./penaltyKicksGame.js?v=5";
 import { createPersonSegmenter } from "./segmentation.js?v=3";
@@ -17,15 +17,20 @@ import { createRunnerGame } from "./runnerGame.js?v=6";
 import { createHopperGame } from "./hopperGame.js?v=10";
 import { createCarDodgeGame } from "./carDodgeGame.js?v=20";
 import { enableSupersampling } from "./renderScale.js?v=1";
-import { createPostProcessor } from "./shaderPost.js?v=1";
+import { createPostProcessor } from "./shaderPost.js?v=2";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
-const ctx = canvas.getContext("2d");
+// alpha:false lets the browser skip per-pixel alpha compositing (the output
+// canvas always paints a full opaque background first, so it never needs
+// it); desynchronized:true lets the browser present frames without waiting
+// on its normal compositor queue where supported -- both raise the frame
+// rate ceiling rather than changing anything visually.
+const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const postCanvas = document.getElementById("post-canvas");
 const threeCanvas = document.getElementById("three-canvas");
 const fxCanvas = document.getElementById("fx-canvas");
-const fxCtx = fxCanvas.getContext("2d");
+const fxCtx = fxCanvas.getContext("2d", { desynchronized: true });
 enableSupersampling(canvas, ctx);
 enableSupersampling(fxCanvas, fxCtx);
 // Shader post-process (bloom, colour grading, chromatic aberration, grain):

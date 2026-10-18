@@ -84,7 +84,15 @@ function compile(gl, type, src) {
 }
 
 export function createPostProcessor(sourceCanvas, targetCanvas) {
-  const glOpts = { antialias: false, alpha: false, premultipliedAlpha: false, depth: false, stencil: false };
+  const glOpts = {
+    antialias: false,
+    alpha: false,
+    premultipliedAlpha: false,
+    depth: false,
+    stencil: false,
+    desynchronized: true,
+    powerPreference: "high-performance",
+  };
   const gl = targetCanvas.getContext("webgl", glOpts) || targetCanvas.getContext("experimental-webgl", glOpts);
   if (!gl) {
     console.warn("WebGL unavailable -- skipping the post-process shader layer.");
