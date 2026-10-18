@@ -38,6 +38,7 @@ canvas {
   height: 100vh;
 }
 
+#post-canvas,
 #three-canvas,
 #fx-canvas {
   position: absolute;
@@ -46,6 +47,7 @@ canvas {
   pointer-events: none;
 }
 
+#post-canvas.hidden,
 #three-canvas.hidden,
 #fx-canvas.hidden {
   display: none;

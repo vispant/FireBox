@@ -17,15 +17,23 @@ import { createRunnerGame } from "./runnerGame.js?v=5";
 import { createHopperGame } from "./hopperGame.js?v=9";
 import { createCarDodgeGame } from "./carDodgeGame.js?v=19";
 import { enableSupersampling } from "./renderScale.js?v=1";
+import { createPostProcessor } from "./shaderPost.js?v=1";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
 const ctx = canvas.getContext("2d");
+const postCanvas = document.getElementById("post-canvas");
 const threeCanvas = document.getElementById("three-canvas");
 const fxCanvas = document.getElementById("fx-canvas");
 const fxCtx = fxCanvas.getContext("2d");
 enableSupersampling(canvas, ctx);
 enableSupersampling(fxCanvas, fxCtx);
+// Shader post-process (bloom, colour grading, chromatic aberration, grain):
+// re-renders whatever `canvas` just drew onto `postCanvas`, which sits right
+// on top of it, every frame -- every game gets this for free, no game file
+// needs any changes. Falls back to leaving `canvas` visible directly if
+// WebGL isn't available.
+const postProcessor = createPostProcessor(canvas, postCanvas);
 const hud = document.getElementById("hud");
 const hudLeft = document.getElementById("hudLeft");
 const hudRight = document.getElementById("hudRight");
@@ -35,6 +43,12 @@ const overlay = document.getElementById("overlay");
 let poseLandmarker = null;
 let lastVideoTime = -1;
 let lastFrameTime = 0;
+// Adaptive quality: if a device can't sustain a smooth frame rate with the
+// post-process shader on, drop it automatically rather than leave gameplay
+// janky. Judged on a rolling window so one slow frame (asset load, GC pause)
+// doesn't trip it.
+let postFrameTimes = [];
+let postDisabled = false;
 let latestLandmarks = null;
 
 let currentStream = null;
@@ -284,6 +298,19 @@ function predict() {
     activeGame.draw(latestLandmarks);
   }
 
+  if (!postDisabled) {
+    postProcessor.render();
+    postFrameTimes.push(dt);
+    if (postFrameTimes.length > 90) postFrameTimes.shift();
+    if (postFrameTimes.length === 90) {
+      const avg = postFrameTimes.reduce((a, b) => a + b, 0) / postFrameTimes.length;
+      if (avg > 42) {
+        postDisabled = true;
+        postCanvas.classList.add("hidden");
+        console.warn("Post-process shader disabled automatically: this device can't sustain a smooth frame rate with it on.");
+      }
+    }
+  }
   requestAnimationFrame(predict);
 }
 
