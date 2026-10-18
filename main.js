@@ -542,7 +542,7 @@ function renderMenu() {
 function renderPauseMenu() {
   const info = activeGame.getPauseInfo ? activeGame.getPauseInfo() : null;
   overlay.innerHTML = `
-    <h1>Paused</h1>
+    <h1>⏸️ Paused</h1>
     ${
       info
         ? `<p>Coins: ${info.coins}</p>
@@ -580,9 +580,15 @@ function renderResetConfirm() {
 }
 
 function renderGameOver(result) {
+  const isBest = /new best/i.test(result.message);
+  const isWin = !isBest && /\b(won|victory|winner)\b/i.test(result.title + " " + result.message);
+  const icon = isBest ? "🏆" : isWin ? "🎉" : "🏁";
   overlay.innerHTML = `
-    <h1>${result.title}</h1>
-    <p>${result.message}</p>
+    <div class="result-card${isBest ? " is-best" : ""}">
+      <span class="result-icon">${icon}</span>
+      <h1>${result.title}</h1>
+      <p>${result.message}</p>
+    </div>
     <button data-action="retry">Play Again</button>
     ${activeGame.renderShop ? `<button class="secondary" data-action="shop">🚗 Garage</button>` : ""}
     <button class="secondary" data-action="quit">Back to Menu</button>

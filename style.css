@@ -103,6 +103,16 @@ canvas {
   color: #e2e8f0;
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   cursor: pointer;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+
+#pauseBtn:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+#pauseBtn:active {
+  transform: translateY(0);
 }
 
 #overlay {
@@ -126,6 +136,44 @@ canvas {
 #overlay h1 {
   margin: 0;
   font-size: 2.2rem;
+  text-shadow: 0 2px 12px rgba(96, 165, 250, 0.35);
+}
+
+/* Every screen pops in softly instead of snapping into place -- a cheap,
+   universal polish that touches every menu, lobby, pause and game-over
+   screen in the app since they all just replace #overlay's children. */
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+#overlay > * {
+  animation: popIn 0.4s cubic-bezier(0.16, 0.84, 0.44, 1) both;
+}
+
+#overlay > *:nth-child(2) {
+  animation-delay: 0.04s;
+}
+#overlay > *:nth-child(3) {
+  animation-delay: 0.08s;
+}
+#overlay > *:nth-child(4) {
+  animation-delay: 0.12s;
+}
+#overlay > *:nth-child(n + 5) {
+  animation-delay: 0.16s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #overlay > * {
+    animation: none;
+  }
 }
 
 #overlay p {
@@ -186,6 +234,14 @@ canvas {
   text-decoration: underline;
   padding: 4px;
   font-family: inherit;
+  box-shadow: none;
+  transition: color 0.12s ease;
+}
+
+#overlay .auth-toggle:hover {
+  color: #93c5fd;
+  transform: none;
+  box-shadow: none;
 }
 
 .room-code {
@@ -239,6 +295,11 @@ canvas {
   object-fit: cover;
   display: block;
   background: #0f172a;
+  transition: transform 0.25s ease;
+}
+
+#overlay .game-card:hover .card-thumb {
+  transform: scale(1.05);
 }
 
 #overlay .game-card .card-body {
@@ -286,22 +347,93 @@ canvas {
   font-size: 1.05rem;
   border-radius: 999px;
   border: none;
-  background: #60a5fa;
+  background: linear-gradient(135deg, #7bb8fc, #4f94f5);
   color: #0f172a;
   font-weight: 700;
   cursor: pointer;
   font-family: inherit;
+  box-shadow: 0 6px 16px rgba(79, 148, 245, 0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+#overlay button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(79, 148, 245, 0.45);
+  filter: brightness(1.05);
+}
+
+#overlay button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 4px 10px rgba(79, 148, 245, 0.35);
 }
 
 #overlay button.secondary {
   background: transparent;
   color: #e2e8f0;
   border: 1px solid #334155;
+  box-shadow: none;
+}
+
+#overlay button.secondary:hover:not(:disabled) {
+  border-color: #60a5fa;
+  background: rgba(96, 165, 250, 0.08);
+  box-shadow: none;
 }
 
 #overlay button:disabled {
   opacity: 0.4;
   cursor: default;
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+
+.result-icon {
+  font-size: 3.2rem;
+  line-height: 1;
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.5));
+}
+
+.result-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 22px 30px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, rgba(30, 41, 59, 0.85), rgba(15, 23, 42, 0.75));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  max-width: 420px;
+}
+
+#overlay .result-card.is-best {
+  border-color: rgba(251, 191, 36, 0.55);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(251, 191, 36, 0.15), 0 0 32px rgba(251, 191, 36, 0.22);
+  animation: popIn 0.4s cubic-bezier(0.16, 0.84, 0.44, 1) both, bestGlow 2.2s ease-in-out 0.4s infinite;
+}
+
+@keyframes bestGlow {
+  0%, 100% {
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(251, 191, 36, 0.15), 0 0 24px rgba(251, 191, 36, 0.18);
+  }
+  50% {
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(251, 191, 36, 0.3), 0 0 40px rgba(251, 191, 36, 0.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #overlay .result-card.is-best {
+    animation: none;
+  }
+}
+
+.result-card h1 {
+  font-size: 1.8rem;
+}
+
+.result-card p {
+  margin: 0;
 }
 
 #status {
