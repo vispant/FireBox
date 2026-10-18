@@ -158,6 +158,28 @@ export function createRunnerGame({ canvas, ctx }) {
     if (e.code === "ArrowDown" || e.code === "KeyS") ducking = false;
   });
 
+  // Touch/mouse: tap the top half of the screen to jump, hold the bottom
+  // half to duck.
+  canvas.addEventListener("pointerdown", (e) => {
+    if (gameOver) return;
+    const rect = canvas.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    if (y < rect.height / 2) {
+      if (grounded) {
+        playerVelY = JUMP_SPEED;
+        grounded = false;
+      }
+    } else {
+      ducking = true;
+    }
+  });
+  window.addEventListener("pointerup", () => {
+    ducking = false;
+  });
+  window.addEventListener("pointercancel", () => {
+    ducking = false;
+  });
+
   function groundY() {
     return canvas.height - GROUND_Y_MARGIN;
   }

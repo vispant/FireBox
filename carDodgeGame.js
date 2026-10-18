@@ -190,6 +190,28 @@ export function createCarDodgeGame({ canvas, ctx }) {
     }
   });
 
+  // Touch/mouse: tap the left or right third of the road to change lanes,
+  // hold the middle third to boost.
+  canvas.addEventListener("pointerdown", (e) => {
+    if (gameOver) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const third = rect.width / 3;
+    if (x < third) {
+      playerLane = Math.max(0, playerLane - 1);
+    } else if (x > third * 2) {
+      playerLane = Math.min(LANE_COUNT - 1, playerLane + 1);
+    } else {
+      boostHeld = true;
+    }
+  });
+  window.addEventListener("pointerup", () => {
+    boostHeld = false;
+  });
+  window.addEventListener("pointercancel", () => {
+    boostHeld = false;
+  });
+
   function roadLeft() {
     return (canvas.width * (1 - ROAD_WIDTH_RATIO)) / 2;
   }

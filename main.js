@@ -13,9 +13,9 @@ import { createFlappyGame } from "./flappyGame.js?v=6";
 import { createWhackGame } from "./whackGame.js?v=6";
 import { createSnakeArenaGame } from "./snakeArenaGame.js?v=17";
 import { createBrickGame } from "./brickGame.js?v=8";
-import { createRunnerGame } from "./runnerGame.js?v=5";
-import { createHopperGame } from "./hopperGame.js?v=9";
-import { createCarDodgeGame } from "./carDodgeGame.js?v=19";
+import { createRunnerGame } from "./runnerGame.js?v=6";
+import { createHopperGame } from "./hopperGame.js?v=10";
+import { createCarDodgeGame } from "./carDodgeGame.js?v=20";
 import { enableSupersampling } from "./renderScale.js?v=1";
 import { createPostProcessor } from "./shaderPost.js?v=1";
 
@@ -184,6 +184,7 @@ async function setupCamera(deviceId) {
   const res = computeViewportResolution();
   const videoConstraints = { width: res.width, height: res.height };
   if (deviceId) videoConstraints.deviceId = { exact: deviceId };
+  else videoConstraints.facingMode = { ideal: "user" };
 
   const stream = await navigator.mediaDevices.getUserMedia({
     video: videoConstraints,

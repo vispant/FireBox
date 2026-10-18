@@ -9,6 +9,8 @@ html, body {
   color: #e2e8f0;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #app {
@@ -18,6 +20,9 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 video {
@@ -29,6 +34,7 @@ canvas {
   height: 100%;
   object-fit: cover;
   display: block;
+  touch-action: none;
 }
 
 #canvasStack {
@@ -129,6 +135,7 @@ canvas {
   text-align: center;
   padding: 24px;
   overflow-y: auto;
+  touch-action: pan-y;
 }
 
 #overlay.hidden {
@@ -219,6 +226,9 @@ canvas {
   font-size: 1rem;
   font-family: inherit;
   width: 100%;
+  touch-action: manipulation;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .auth-form input:focus {

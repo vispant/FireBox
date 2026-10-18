@@ -148,6 +148,23 @@ export function createHopperGame({ canvas, ctx }) {
     if (e.code === "ArrowRight" || e.code === "KeyD") rightHeld = false;
   });
 
+  // Touch/mouse: hold the left or right half of the screen to steer, same as
+  // holding the arrow keys.
+  canvas.addEventListener("pointerdown", (e) => {
+    if (gameOver) return;
+    const rect = canvas.getBoundingClientRect();
+    if (e.clientX - rect.left < rect.width / 2) leftHeld = true;
+    else rightHeld = true;
+  });
+  window.addEventListener("pointerup", () => {
+    leftHeld = false;
+    rightHeld = false;
+  });
+  window.addEventListener("pointercancel", () => {
+    leftHeld = false;
+    rightHeld = false;
+  });
+
   function puff(x, y) {
     for (let i = 0; i < 9; i++) {
       fx.push({ x: x + (Math.random() - 0.5) * 30, y, vx: (Math.random() - 0.5) * 150, vy: -10 - Math.random() * 50, life: 0.5, max: 0.5, r: 3 + Math.random() * 4, color: "255,255,255", g: 40 });
