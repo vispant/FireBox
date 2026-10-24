@@ -49,6 +49,10 @@ const fpsCounter = document.getElementById("fpsCounter");
 let poseLandmarker = null;
 let lastVideoTime = -1;
 let lastFrameTime = 0;
+// Cap the game loop at 60fps instead of letting it run uncapped on high
+// refresh-rate displays (120/144/240Hz) -- rAF still fires at the display's
+// native rate, this just skips doing any work on the frames in between.
+const TARGET_FRAME_MS = 1000 / 60;
 // Adaptive quality: if a device can't sustain a smooth frame rate with the
 // post-process shader on, drop it automatically rather than leave gameplay
 // janky. Judged on a rolling window so one slow frame (asset load, GC pause)
@@ -271,6 +275,12 @@ function updateHud() {
 }
 
 function predict() {
+  const frameNow = performance.now();
+  if (lastFrameTime && frameNow - lastFrameTime < TARGET_FRAME_MS - 1) {
+    requestAnimationFrame(predict);
+    return;
+  }
+
   if (poseLandmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const result = poseLandmarker.detectForVideo(video, performance.now());
