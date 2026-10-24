@@ -153,7 +153,10 @@ canvas {
 
 @media (max-width: 560px) {
   #fpsCounter {
-    top: 10px;
+    /* Stacked below the HUD row instead of sharing its corner -- on a narrow
+       phone the HUD pills can reach close to the right edge and would
+       otherwise overlap this. */
+    top: 52px;
     right: 10px;
     padding: 6px 12px;
     font-size: 0.85rem;
