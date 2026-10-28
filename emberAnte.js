@@ -7,8 +7,9 @@
 // iframe. See mount() at the bottom.
 
 const SAVE_KEY = "fireBox.emberAnte.save.v1";
-const MAX_EMBERS = 5;
+const ACTIVE_RUN_KEY = "fireBox.emberAnte.activeRun.v1";
 const FINAL_ANTE = 8;
+const PACK_COST = 6;
 
 const SUITS = [
   { id: "hearts", symbol: "♥", color: "red" },
@@ -23,9 +24,6 @@ function rankLabel(r) {
 }
 function rankChipValue(r) {
   return r === 14 ? 11 : r >= 11 ? 10 : r;
-}
-function cardId(card) {
-  return `${card.suit.id}-${card.rank}`;
 }
 function freshDeck() {
   const deck = [];
@@ -68,7 +66,6 @@ function evaluateHand(cards) {
     const ranks = cards.map((c) => c.rank).sort((a, b) => a - b);
     isStraight = ranks[4] - ranks[0] === 4;
     if (!isStraight) {
-      // Ace-low straight: A,2,3,4,5
       const lowAce = ranks.map((r) => (r === 14 ? 1 : r)).sort((a, b) => a - b);
       isStraight = lowAce[4] - lowAce[0] === 4 && new Set(lowAce).size === 5;
     }
@@ -114,6 +111,20 @@ function emberById(id) {
   return EMBERS.find((e) => e.id === id);
 }
 
+// ---------------- Vouchers (one-time permanent upgrades for the run) ----------------
+
+const VOUCHERS = [
+  { id: "deep-pockets", name: "Deep Pockets", icon: "👛", cost: 10, desc: "+1 max Ember slot, this run", apply: (run) => { run.maxEmbers += 1; } },
+  { id: "clearance-sale", name: "Clearance Sale", icon: "🏷️", cost: 10, desc: "Shop prices -20%, this run", apply: (run) => { run.discount *= 0.8; } },
+  { id: "quick-draw", name: "Quick Draw", icon: "✋", cost: 10, desc: "+1 card in your hand, this run", apply: (run) => { run.handSize += 1; } },
+  { id: "bankroll", name: "Bankroll", icon: "💰", cost: 6, desc: "Gain 15 coins immediately", apply: (run) => { run.coins += 15; } },
+  { id: "steady-hand", name: "Steady Hand", icon: "🤲", cost: 9, desc: "+1 discard per round, this run", apply: (run) => { run.discardsPerRound += 1; } },
+  { id: "wide-market", name: "Wide Market", icon: "🛒", cost: 11, desc: "+1 Ember offer in the shop, this run", apply: (run) => { run.shopEmberSlots += 1; } },
+];
+function voucherById(id) {
+  return VOUCHERS.find((v) => v.id === id);
+}
+
 // ---------------- Save data (persistent across runs) ----------------
 
 function loadSave() {
@@ -142,21 +153,77 @@ const PERKS = [
   { id: "head-start", name: "Head Start", desc: "Start each run with a random Ember equipped", cost: 15 },
 ];
 
+// ---------------- Active-run persistence (so quitting mid-run is resumable) ----------------
+
+function serializeCard(c) {
+  return { suitId: c.suit.id, rank: c.rank, id: c.id };
+}
+function deserializeCard(c) {
+  return { suit: SUITS.find((s) => s.id === c.suitId), rank: c.rank, id: c.id };
+}
+function saveActiveRun(run) {
+  try {
+    const data = {
+      ...run,
+      deck: run.deck.map(serializeCard),
+      drawPile: run.drawPile.map(serializeCard),
+      discardPile: run.discardPile.map(serializeCard),
+      hand: run.hand.map(serializeCard),
+    };
+    localStorage.setItem(ACTIVE_RUN_KEY, JSON.stringify(data));
+  } catch {}
+}
+function loadActiveRun() {
+  try {
+    const raw = localStorage.getItem(ACTIVE_RUN_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return {
+      ...data,
+      deck: data.deck.map(deserializeCard),
+      drawPile: data.drawPile.map(deserializeCard),
+      discardPile: data.discardPile.map(deserializeCard),
+      hand: data.hand.map(deserializeCard),
+    };
+  } catch {
+    return null;
+  }
+}
+function clearActiveRun() {
+  try {
+    localStorage.removeItem(ACTIVE_RUN_KEY);
+  } catch {}
+}
+
 // ---------------- Round economy ----------------
 
 function roundTarget(ante, round) {
   return Math.round(60 * Math.pow(1.45, ante - 1) * (1 + (round - 1) * 0.35));
 }
+function previewNextRound(run) {
+  if (run.round < 3) return { ante: run.ante, round: run.round + 1 };
+  if (run.ante < FINAL_ANTE) return { ante: run.ante + 1, round: 1 };
+  return { ante: run.ante, round: run.round, final: true };
+}
 function roundReward(round, handsLeft) {
   return 4 + handsLeft * 2 + round;
 }
+function priceMultiplier(run) {
+  let mult = run.discount || 1;
+  if (run.embers.includes("economy-class")) mult *= 0.85;
+  return mult;
+}
 function emberCost(run, ember) {
-  const mult = run.embers.includes("economy-class") ? 0.85 : 1;
-  return Math.max(1, Math.round(ember.cost * mult));
+  return Math.max(1, Math.round(ember.cost * priceMultiplier(run)));
+}
+function voucherCost(run, voucher) {
+  return Math.max(1, Math.round(voucher.cost * priceMultiplier(run)));
 }
 function removeCardCost(run) {
-  const mult = run.embers.includes("economy-class") ? 0.85 : 1;
-  return Math.max(1, Math.round(5 * mult));
+  return Math.max(1, Math.round(5 * priceMultiplier(run)));
+}
+function packCost(run) {
+  return Math.max(1, Math.round(PACK_COST * priceMultiplier(run)));
 }
 
 function drawCards(run, n) {
@@ -170,6 +237,13 @@ function drawCards(run, n) {
     drawn.push(run.drawPile.pop());
   }
   return drawn;
+}
+function sortHandInPlace(run, mode) {
+  if (mode === "suit") {
+    run.hand.sort((a, b) => SUITS.findIndex((s) => s.id === a.suit.id) - SUITS.findIndex((s) => s.id === b.suit.id) || b.rank - a.rank);
+  } else {
+    run.hand.sort((a, b) => b.rank - a.rank);
+  }
 }
 
 function computeScore(run, cards) {
@@ -198,6 +272,9 @@ function esc(str) {
 export function createEmberAnteGame() {
   let save = loadSave();
   let run = null;
+  let sortMode = "rank";
+  let shopOffers = [];
+  let packChoices = null;
 
   function startRun() {
     const handsPerRound = 4 + (save.perks["extra-hand"] ? 1 : 0);
@@ -206,12 +283,17 @@ export function createEmberAnteGame() {
       ante: 1,
       round: 1,
       coins: 0,
+      maxEmbers: 5,
+      handSize: 8,
+      discount: 1,
+      shopEmberSlots: 3,
       deck: freshDeck(),
       drawPile: [],
       discardPile: [],
       hand: [],
       selected: [],
       embers: save.perks["head-start"] ? [EMBERS[Math.floor(Math.random() * EMBERS.length)].id] : [],
+      purchasedVouchers: [],
       secondChanceUsed: false,
       handsPerRound,
       discardsPerRound,
@@ -223,35 +305,49 @@ export function createEmberAnteGame() {
     startRound();
   }
 
+  function resumeRun() {
+    const saved = loadActiveRun();
+    if (!saved) return;
+    run = saved;
+    renderPlaying();
+  }
+
   function startRound() {
     run.drawPile = shuffle(run.deck);
     run.discardPile = [];
-    run.hand = drawCards(run, 8);
+    run.hand = drawCards(run, run.handSize);
+    sortHandInPlace(run, sortMode);
     run.selected = [];
     run.handsLeft = run.handsPerRound;
     run.discardsLeft = run.discardsPerRound;
     run.handsPlayedThisRound = 0;
     run.roundScore = 0;
+    saveActiveRun(run);
     renderPlaying();
   }
 
-  function toggleCard(index) {
-    const pos = run.selected.indexOf(index);
+  function setSortMode(mode) {
+    sortMode = mode;
+    sortHandInPlace(run, sortMode);
+    saveActiveRun(run);
+    renderPlaying();
+  }
+
+  function toggleCard(id) {
+    const pos = run.selected.indexOf(id);
     if (pos >= 0) run.selected.splice(pos, 1);
-    else if (run.selected.length < 5) run.selected.push(index);
+    else if (run.selected.length < 5) run.selected.push(id);
     renderPlaying();
   }
 
   function playHand() {
     if (!run.selected.length) return;
-    const indices = run.selected.slice().sort((a, b) => b - a);
-    const playedCards = run.selected.map((i) => run.hand[i]);
+    const playedCards = run.hand.filter((c) => run.selected.includes(c.id));
     const result = computeScore(run, playedCards);
-    for (const i of indices) {
-      run.discardPile.push(run.hand[i]);
-      run.hand.splice(i, 1);
-    }
-    run.hand.push(...drawCards(run, indices.length));
+    run.hand = run.hand.filter((c) => !run.selected.includes(c.id));
+    run.discardPile.push(...playedCards);
+    run.hand.push(...drawCards(run, playedCards.length));
+    sortHandInPlace(run, sortMode);
     run.selected = [];
     run.roundScore += result.total;
     run.handsPlayedThisRound += 1;
@@ -260,6 +356,7 @@ export function createEmberAnteGame() {
     if (run.roundScore >= roundTarget(run.ante, run.round)) {
       const coinsEarned = roundReward(run.round, run.handsLeft);
       run.coins += coinsEarned;
+      saveActiveRun(run);
       renderRoundResult(true, result, coinsEarned);
       return;
     }
@@ -268,25 +365,27 @@ export function createEmberAnteGame() {
         run.secondChanceUsed = true;
         run.embers = run.embers.filter((id) => id !== "second-chance");
         run.handsLeft = 1;
+        saveActiveRun(run);
         renderRoundResult(false, result, 0, true);
         return;
       }
       endRun(false);
       return;
     }
+    saveActiveRun(run);
     renderRoundResult(false, result, 0, false);
   }
 
   function discardHand() {
     if (!run.selected.length || run.discardsLeft <= 0) return;
-    const indices = run.selected.slice().sort((a, b) => b - a);
-    for (const i of indices) {
-      run.discardPile.push(run.hand[i]);
-      run.hand.splice(i, 1);
-    }
-    run.hand.push(...drawCards(run, indices.length));
+    const discarded = run.hand.filter((c) => run.selected.includes(c.id));
+    run.hand = run.hand.filter((c) => !run.selected.includes(c.id));
+    run.discardPile.push(...discarded);
+    run.hand.push(...drawCards(run, discarded.length));
+    sortHandInPlace(run, sortMode);
     run.selected = [];
     run.discardsLeft -= 1;
+    saveActiveRun(run);
     renderPlaying();
   }
 
@@ -308,37 +407,76 @@ export function createEmberAnteGame() {
     if (anteReached > save.bestAnte) save.bestAnte = anteReached;
     save.sparks += anteReached;
     writeSave(save);
+    clearActiveRun();
     renderGameOver(won, anteReached, run.round);
   }
 
   function buyEmber(id) {
-    if (run.embers.length >= MAX_EMBERS || run.embers.includes(id)) return;
+    if (run.embers.length >= run.maxEmbers || run.embers.includes(id)) return;
     const ember = emberById(id);
     const cost = emberCost(run, ember);
     if (run.coins < cost) return;
     run.coins -= cost;
     run.embers.push(id);
+    saveActiveRun(run);
+    renderShop();
+  }
+
+  function buyVoucher(id) {
+    if (run.purchasedVouchers.includes(id)) return;
+    const voucher = voucherById(id);
+    const cost = voucherCost(run, voucher);
+    if (run.coins < cost) return;
+    run.coins -= cost;
+    run.purchasedVouchers.push(id);
+    voucher.apply(run);
+    saveActiveRun(run);
+    renderShop();
+  }
+
+  function buyPack() {
+    const cost = packCost(run);
+    if (run.coins < cost) return;
+    run.coins -= cost;
+    const pool = EMBERS.filter((e) => !run.embers.includes(e.id));
+    packChoices = shuffle(pool).slice(0, 2).map((e) => e.id);
+    saveActiveRun(run);
+    renderPackOpen();
+  }
+
+  function pickPackCard(id) {
+    if (run.embers.length < run.maxEmbers && !run.embers.includes(id)) {
+      run.embers.push(id);
+      saveActiveRun(run);
+    }
+    packChoices = null;
     renderShop();
   }
 
   function removeCard(id) {
     run.deck = run.deck.filter((c) => c.id !== id);
+    saveActiveRun(run);
     renderShop();
   }
 
-  let shopOffers = [];
   function rollShopOffers() {
     const pool = EMBERS.filter((e) => !run.embers.includes(e.id));
-    shopOffers = shuffle(pool).slice(0, 3).map((e) => e.id);
+    shopOffers = shuffle(pool).slice(0, run.shopEmberSlots).map((e) => e.id);
+  }
+  function unpurchasedVoucher() {
+    const pool = VOUCHERS.filter((v) => !run.purchasedVouchers.includes(v.id));
+    if (!pool.length) return null;
+    return shuffle(pool)[0].id;
   }
 
   // ---------------- Rendering ----------------
 
   let root = null;
+  let voucherOffer = null;
 
-  function cardHtml(card, index, selected) {
+  function cardHtml(card, selected) {
     return `
-      <button class="playing-card ${card.suit.color} ${selected ? "selected" : ""}" data-ember-action="toggle-card" data-index="${index}">
+      <button class="playing-card ${card.suit.color} ${selected ? "selected" : ""}" data-ember-action="toggle-card" data-id="${card.id}">
         <span class="card-rank">${rankLabel(card.rank)}</span>
         <span class="card-suit">${card.suit.symbol}</span>
       </button>`;
@@ -354,27 +492,58 @@ export function createEmberAnteGame() {
       .join("")}</div>`;
   }
 
+  function sidebarHtml(extraStat) {
+    return `
+      <div class="ember-sidebar">
+        <div class="ember-stat-box">
+          <span class="ember-stat-label">Round Score</span>
+          <span class="ember-stat-value">${run.roundScore}</span>
+        </div>
+        <div class="ember-stat-row">
+          <div class="ember-stat-box small"><span class="ember-stat-label">Hands</span><span class="ember-stat-value">${run.handsLeft}</span></div>
+          <div class="ember-stat-box small"><span class="ember-stat-label">Discards</span><span class="ember-stat-value">${run.discardsLeft}</span></div>
+        </div>
+        <div class="ember-stat-box"><span class="ember-stat-label">Coins</span><span class="ember-stat-value">🪙 ${run.coins}</span></div>
+        <div class="ember-stat-row">
+          <div class="ember-stat-box small"><span class="ember-stat-label">Ante</span><span class="ember-stat-value">${run.ante}/${FINAL_ANTE}</span></div>
+          <div class="ember-stat-box small"><span class="ember-stat-label">Round</span><span class="ember-stat-value">${run.round}/3</span></div>
+        </div>
+        ${extraStat || ""}
+        <button class="secondary" data-ember-action="exit-to-menu">← Quit Run</button>
+      </div>`;
+  }
+
   function renderPlaying() {
     const target = roundTarget(run.ante, run.round);
-    const selectedCards = run.selected.map((i) => run.hand[i]);
+    const pct = Math.min(100, Math.round((run.roundScore / target) * 100));
+    const selectedCards = run.hand.filter((c) => run.selected.includes(c.id));
     const preview = selectedCards.length ? computeScore(run, selectedCards) : null;
+    const deckLeft = run.drawPile.length + run.discardPile.length;
     root.innerHTML = `
-      <div class="ember-screen">
-        <div class="ember-topbar">
-          <span>Ante ${run.ante} · Round ${run.round}/3</span>
-          <span>Score ${run.roundScore} / ${target}</span>
-          <span>Hands ${run.handsLeft} · Discards ${run.discardsLeft}</span>
-          <span>🪙 ${run.coins}</span>
-          <button class="secondary" data-ember-action="exit-to-menu">← Quit Run</button>
-        </div>
-        ${emberRowHtml(run.embers)}
-        <div class="ember-preview">${
-          preview ? `${preview.name} — ${preview.chips} chips × ${preview.mult} mult = <strong>${preview.total}</strong>` : "Select up to 5 cards"
-        }</div>
-        <div class="hand-tray">${run.hand.map((c, i) => cardHtml(c, i, run.selected.includes(i))).join("")}</div>
-        <div class="ember-actions">
-          <button class="secondary" data-ember-action="discard-hand" ${!run.selected.length || !run.discardsLeft ? "disabled" : ""}>Discard</button>
-          <button data-ember-action="play-hand" ${!run.selected.length ? "disabled" : ""}>Play Hand</button>
+      <div class="ember-layout">
+        ${sidebarHtml()}
+        <div class="ember-main">
+          <div class="ember-blind-card">
+            <span class="ember-blind-label">Round ${run.round} of 3</span>
+            <span class="ember-blind-target">Score at least <strong>${target}</strong></span>
+            <div class="ember-blind-bar"><div class="ember-blind-bar-fill" style="width:${pct}%"></div></div>
+          </div>
+          ${emberRowHtml(run.embers)}
+          <div class="ember-preview">${
+            preview ? `${preview.name} — ${preview.chips} chips × ${preview.mult} mult = <strong>${preview.total}</strong>` : "Select up to 5 cards"
+          }</div>
+          <div class="hand-tray">${run.hand.map((c) => cardHtml(c, run.selected.includes(c.id))).join("")}</div>
+          <div class="ember-subrow">
+            <div class="sort-row">
+              <button class="chip-toggle ${sortMode === "rank" ? "active" : ""}" data-ember-action="sort-rank">Sort: Rank</button>
+              <button class="chip-toggle ${sortMode === "suit" ? "active" : ""}" data-ember-action="sort-suit">Sort: Suit</button>
+            </div>
+            <span class="deck-indicator">🂠 ${deckLeft}/${run.deck.length} left</span>
+          </div>
+          <div class="ember-actions">
+            <button class="secondary" data-ember-action="discard-hand" ${!run.selected.length || !run.discardsLeft ? "disabled" : ""}>Discard</button>
+            <button data-ember-action="play-hand" ${!run.selected.length ? "disabled" : ""}>Play Hand</button>
+          </div>
         </div>
       </div>`;
   }
@@ -395,33 +564,79 @@ export function createEmberAnteGame() {
 
   function enterShop() {
     rollShopOffers();
+    voucherOffer = unpurchasedVoucher();
     renderShop();
   }
 
   function renderShop() {
+    const voucher = voucherOffer ? voucherById(voucherOffer) : null;
+    const next = previewNextRound(run);
     root.innerHTML = `
-      <div class="ember-screen">
-        <h1>🔥 Ember Market</h1>
-        <p>Ante ${run.ante} · Round ${run.round} next &nbsp;•&nbsp; 🪙 ${run.coins} &nbsp;•&nbsp; Embers ${run.embers.length}/${MAX_EMBERS}</p>
-        <div class="game-grid">
-          ${shopOffers
-            .map((id) => {
-              const e = emberById(id);
-              const cost = emberCost(run, e);
-              const owned = run.embers.includes(id);
-              const disabled = owned || run.coins < cost || run.embers.length >= MAX_EMBERS;
-              return `
-              <div class="shop-card">
-                <strong>${e.icon} ${esc(e.name)}</strong>
-                <span>${esc(e.desc)}</span>
-                <button data-ember-action="buy-ember" data-id="${e.id}" ${disabled ? "disabled" : ""}>${owned ? "✓ Owned" : `Buy — ${cost} coins`}</button>
-              </div>`;
-            })
-            .join("")}
+      <div class="ember-layout">
+        ${sidebarHtml(`<div class="ember-stat-box"><span class="ember-stat-label">Next</span><span class="ember-stat-value">${next.final ? "Final Boss" : `Ante ${next.ante} · R${next.round}`}</span></div>`)}
+        <div class="ember-main">
+          <h1>🔥 Ember Market</h1>
+          <p>Embers ${run.embers.length}/${run.maxEmbers}</p>
+          <div class="game-grid">
+            ${shopOffers
+              .map((id) => {
+                const e = emberById(id);
+                const cost = emberCost(run, e);
+                const owned = run.embers.includes(id);
+                const disabled = owned || run.coins < cost || run.embers.length >= run.maxEmbers;
+                return `
+                <div class="shop-card">
+                  <strong>${e.icon} ${esc(e.name)}</strong>
+                  <span>${esc(e.desc)}</span>
+                  <button data-ember-action="buy-ember" data-id="${e.id}" ${disabled ? "disabled" : ""}>${owned ? "✓ Owned" : `Buy — ${cost} coins`}</button>
+                </div>`;
+              })
+              .join("")}
+            <div class="shop-card">
+              <strong>🎁 Spark Pack</strong>
+              <span>Open for a choice of 2 random Embers</span>
+              <button data-ember-action="buy-pack" ${run.coins < packCost(run) ? "disabled" : ""}>Open — ${packCost(run)} coins</button>
+            </div>
+            ${
+              voucher
+                ? `
+            <div class="shop-card voucher">
+              <strong>${voucher.icon} ${esc(voucher.name)} <span class="voucher-tag">Voucher</span></strong>
+              <span>${esc(voucher.desc)}</span>
+              <button data-ember-action="buy-voucher" data-id="${voucher.id}" ${run.coins < voucherCost(run, voucher) ? "disabled" : ""}>Buy — ${voucherCost(run, voucher)} coins</button>
+            </div>`
+                : ""
+            }
+          </div>
+          <button class="secondary" data-ember-action="open-remove-card">🗑️ Remove a Card — ${removeCardCost(run)} coins</button>
+          <button data-ember-action="leave-shop">Continue to Round →</button>
         </div>
-        <button class="secondary" data-ember-action="open-remove-card">🗑️ Remove a Card — ${removeCardCost(run)} coins</button>
-        <button data-ember-action="leave-shop">Continue to Round →</button>
-        <button class="secondary" data-ember-action="exit-to-menu">Quit Run</button>
+      </div>`;
+  }
+
+  function renderPackOpen() {
+    root.innerHTML = `
+      <div class="ember-layout">
+        ${sidebarHtml()}
+        <div class="ember-main">
+          <h1>🎁 Spark Pack</h1>
+          <p>Pick one Ember to keep.</p>
+          <div class="game-grid">
+            ${packChoices
+              .map((id) => {
+                const e = emberById(id);
+                const full = run.embers.length >= run.maxEmbers;
+                return `
+                <div class="shop-card">
+                  <strong>${e.icon} ${esc(e.name)}</strong>
+                  <span>${esc(e.desc)}</span>
+                  <button data-ember-action="pick-pack-card" data-id="${e.id}" ${full ? "disabled" : ""}>${full ? "Embers full" : "Pick"}</button>
+                </div>`;
+              })
+              .join("")}
+          </div>
+          <button class="secondary" data-ember-action="skip-pack">Skip</button>
+        </div>
       </div>`;
   }
 
@@ -438,11 +653,14 @@ export function createEmberAnteGame() {
       </div>`
     ).join("");
     root.innerHTML = `
-      <div class="ember-screen">
-        <h1>Remove a Card</h1>
-        <p>Pick one card to permanently remove from your deck this run — ${cost} coins.</p>
-        ${bySuit}
-        <button class="secondary" data-ember-action="cancel-remove">Cancel</button>
+      <div class="ember-layout">
+        ${sidebarHtml()}
+        <div class="ember-main">
+          <h1>Remove a Card</h1>
+          <p>Pick one card to permanently remove from your deck this run — ${cost} coins.</p>
+          ${bySuit}
+          <button class="secondary" data-ember-action="cancel-remove">Cancel</button>
+        </div>
       </div>`;
   }
 
@@ -461,6 +679,7 @@ export function createEmberAnteGame() {
   }
 
   function renderIntro() {
+    const activeRun = loadActiveRun();
     root.innerHTML = `
       <div class="ember-screen">
         <h1>🔥 Ember Ante</h1>
@@ -476,7 +695,8 @@ export function createEmberAnteGame() {
             </button>`;
           }).join("")}
         </div>
-        <button data-ember-action="start-run">▶️ Start Run</button>
+        ${activeRun ? `<button data-ember-action="continue-run">↻ Continue Run — Ante ${activeRun.ante} · Round ${activeRun.round}</button>` : ""}
+        <button data-ember-action="start-run">▶️ New Run</button>
         <button class="secondary" data-ember-action="exit-to-menu">← Back</button>
       </div>`;
   }
@@ -499,21 +719,33 @@ export function createEmberAnteGame() {
       if (!btn) return;
       const action = btn.dataset.emberAction;
       if (action === "start-run") startRun();
+      else if (action === "continue-run") resumeRun();
       else if (action === "buy-perk") buyPerk(btn.dataset.id);
-      else if (action === "toggle-card") toggleCard(Number(btn.dataset.index));
+      else if (action === "toggle-card") toggleCard(btn.dataset.id);
+      else if (action === "sort-rank") setSortMode("rank");
+      else if (action === "sort-suit") setSortMode("suit");
       else if (action === "play-hand") playHand();
       else if (action === "discard-hand") discardHand();
       else if (action === "continue-shop") enterShop();
       else if (action === "continue-playing") renderPlaying();
       else if (action === "buy-ember") buyEmber(btn.dataset.id);
-      else if (action === "open-remove-card") renderRemoveCard();
+      else if (action === "buy-voucher") buyVoucher(btn.dataset.id);
+      else if (action === "buy-pack") buyPack();
+      else if (action === "pick-pack-card") pickPackCard(btn.dataset.id);
+      else if (action === "skip-pack") {
+        packChoices = null;
+        renderShop();
+      } else if (action === "open-remove-card") renderRemoveCard();
       else if (action === "confirm-remove") {
         if (run.coins < removeCardCost(run)) return;
         run.coins -= removeCardCost(run);
         removeCard(btn.dataset.id);
       } else if (action === "cancel-remove") renderShop();
       else if (action === "leave-shop") advanceRound();
-      else if (action === "exit-to-menu") onExit();
+      else if (action === "exit-to-menu") {
+        if (run) saveActiveRun(run);
+        onExit();
+      }
     }
     root.addEventListener("click", handleClick);
     renderIntro();

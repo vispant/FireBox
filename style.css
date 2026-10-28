@@ -507,17 +507,6 @@ canvas {
   max-width: 760px;
 }
 
-.ember-topbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-
 .ember-row {
   display: flex;
   flex-wrap: wrap;
@@ -650,4 +639,185 @@ canvas {
   font-size: 0.85rem;
   color: #94a3b8;
   line-height: 1.4;
+}
+
+.shop-card.voucher {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: linear-gradient(160deg, rgba(96, 165, 250, 0.1), #1e293b);
+}
+
+.voucher-tag {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #93c5fd;
+  background: rgba(96, 165, 250, 0.15);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  border-radius: 999px;
+  padding: 1px 7px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+/* Sidebar + main play-area layout, used by every in-run screen
+   (playing/shop/pack-open/remove-card) -- menus and results stay on the
+   simpler centered .ember-screen. */
+.ember-layout {
+  display: flex;
+  gap: 18px;
+  width: 100%;
+  max-width: 920px;
+  align-items: flex-start;
+}
+
+.ember-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 170px;
+  flex-shrink: 0;
+}
+
+.ember-stat-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #1e293b;
+  border: 1px solid #334155;
+}
+
+.ember-stat-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ember-stat-row .ember-stat-box.small {
+  flex: 1;
+  padding: 6px 10px;
+}
+
+.ember-stat-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.ember-stat-value {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #fbbf24;
+}
+
+.ember-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ember-blind-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  max-width: 320px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(251, 146, 60, 0.14), #1e293b);
+  border: 1px solid rgba(251, 146, 60, 0.4);
+}
+
+.ember-blind-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.ember-blind-target {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.ember-blind-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.ember-blind-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #fb923c, #fbbf24);
+  transition: width 0.3s ease;
+}
+
+.ember-subrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 560px;
+  gap: 10px;
+}
+
+.sort-row {
+  display: flex;
+  gap: 6px;
+}
+
+#overlay .chip-toggle {
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  box-shadow: none;
+}
+
+#overlay .chip-toggle.active {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.5);
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.deck-indicator {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .ember-layout {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .ember-sidebar {
+    width: 100%;
+    max-width: 320px;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .ember-sidebar .ember-stat-box {
+    flex: 1;
+    min-width: 72px;
+  }
+
+  .ember-sidebar .ember-stat-row {
+    width: 100%;
+  }
+
+  .ember-sidebar button {
+    width: 100%;
+  }
 }
