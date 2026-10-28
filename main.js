@@ -18,6 +18,7 @@ import { createHopperGame } from "./hopperGame.js?v=10";
 import { createCarDodgeGame } from "./carDodgeGame.js?v=20";
 import { enableSupersampling } from "./renderScale.js?v=1";
 import { createPostProcessor } from "./shaderPost.js?v=2";
+import { createEmberAnteGame } from "./emberAnte.js?v=1";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -149,6 +150,11 @@ const normalGames = [
   createHopperGame({ canvas, ctx }),
   createCarDodgeGame({ canvas, ctx }),
 ];
+
+// Built-in apps that, like webGames, don't use the shared canvas game loop --
+// but instead of an external <iframe>, these mount their own DOM/CSS UI
+// directly into #overlay for their whole lifetime (see playAppGame()).
+const appGames = [createEmberAnteGame()];
 
 // Picks a canvas/camera resolution matching this device's actual viewport shape
 // (instead of always requesting/using a fixed 960x540 landscape frame), so
@@ -475,6 +481,34 @@ function playWebGame(id) {
   `;
 }
 
+let activeAppUnmount = null;
+
+// Built-in apps (see appGames above): like playWebGame, this skips
+// reset/update/draw entirely, but mounts the app's own DOM UI directly into
+// #overlay instead of an <iframe> src.
+function playAppGame(id) {
+  const appGame = appGames.find((g) => g.id === id);
+  if (!appGame) return;
+  if (activeAppUnmount) {
+    activeAppUnmount();
+    activeAppUnmount = null;
+  }
+  activeGame = null;
+  beginGameSession(appGame.id);
+  setScreen("menu");
+  overlay.classList.remove("hidden");
+  activeAppUnmount = appGame.mount(overlay, {
+    onExit: () => {
+      if (activeAppUnmount) {
+        activeAppUnmount();
+        activeAppUnmount = null;
+      }
+      endGameSession();
+      openNormalGames();
+    },
+  });
+}
+
 function showHub() {
   setScreen("hub");
   overlay.classList.remove("hidden");
@@ -796,6 +830,18 @@ function renderNormalMenu() {
         </button>`
         )
         .join("")}
+      ${appGames
+        .map(
+          (g) => `
+        <button class="game-card" data-action="open-app-game" data-app-id="${g.id}">
+          ${g.thumbnail ? `<img class="card-thumb" src="${g.thumbnail}" alt="" />` : ""}
+          <div class="card-body">
+            <strong>${escapeHtml(g.title)}</strong>
+            <span>${escapeHtml(g.description)}</span>
+          </div>
+        </button>`
+        )
+        .join("")}
     </div>
   `;
 }
@@ -879,6 +925,8 @@ overlay.addEventListener("click", (e) => {
     openNormalGames();
   } else if (action === "open-web-game") {
     playWebGame(btn.dataset.webId);
+  } else if (action === "open-app-game") {
+    playAppGame(btn.dataset.appId);
   } else if (action === "back-to-hub") {
     exitToHub();
   } else if (action === "select-game") {

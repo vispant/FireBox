@@ -495,3 +495,159 @@ canvas {
 #overlay.solid {
   background: radial-gradient(ellipse at 50% 15%, #14295f 0%, #0b1a45 52%, #060d26 100%);
 }
+
+/* ---------------- Ember Ante ---------------- */
+
+.ember-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 760px;
+}
+
+.ember-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.ember-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.ember-empty {
+  color: #64748b;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.ember-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(251, 146, 60, 0.12);
+  border: 1px solid rgba(251, 146, 60, 0.4);
+  color: #fdba74;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.ember-preview {
+  min-height: 1.4em;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fbbf24;
+}
+
+.hand-tray {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px;
+}
+
+.hand-tray.small {
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+/* #overlay-prefixed so these win over #overlay button's pill shape --
+   #overlay button has an ID in its selector, which outweighs a bare class. */
+#overlay .playing-card {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 68px;
+  height: 94px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: linear-gradient(160deg, #f8fafc, #e2e8f0);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+#overlay .playing-card.small {
+  width: 42px;
+  height: 58px;
+  padding: 5px;
+}
+
+#overlay .playing-card.red .card-rank,
+#overlay .playing-card.red .card-suit {
+  color: #dc2626;
+}
+
+#overlay .playing-card.black .card-rank,
+#overlay .playing-card.black .card-suit {
+  color: #0f172a;
+}
+
+#overlay .playing-card .card-rank {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+#overlay .playing-card .card-suit {
+  font-size: 1.3rem;
+  align-self: flex-end;
+}
+
+#overlay .playing-card:hover:not(:disabled) {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.4);
+}
+
+#overlay .playing-card.selected {
+  transform: translateY(-14px);
+  border-color: #60a5fa;
+  box-shadow: 0 10px 22px rgba(96, 165, 250, 0.45);
+}
+
+#overlay .playing-card:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.ember-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.shop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 190px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  text-align: center;
+}
+
+.shop-card span {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}
