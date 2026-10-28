@@ -44,7 +44,6 @@ const hudLeft = document.getElementById("hudLeft");
 const hudRight = document.getElementById("hudRight");
 const pauseBtn = document.getElementById("pauseBtn");
 const overlay = document.getElementById("overlay");
-const fpsCounter = document.getElementById("fpsCounter");
 
 let poseLandmarker = null;
 let lastVideoTime = -1;
@@ -59,11 +58,6 @@ const TARGET_FRAME_MS = 1000 / 60;
 // doesn't trip it.
 let postFrameTimes = [];
 let postDisabled = false;
-
-// FPS readout: averaged over a short window and refreshed a few times a
-// second instead of every frame, so the number is legible instead of flickering.
-let fpsFrameCount = 0;
-let fpsWindowStart = 0;
 let latestLandmarks = null;
 
 let currentStream = null;
@@ -290,17 +284,6 @@ function predict() {
   const now = performance.now();
   const dt = lastFrameTime ? now - lastFrameTime : 16;
   lastFrameTime = now;
-
-  fpsFrameCount++;
-  if (!fpsWindowStart) fpsWindowStart = now;
-  const fpsElapsed = now - fpsWindowStart;
-  if (fpsElapsed >= 400) {
-    const fps = Math.round((fpsFrameCount / fpsElapsed) * 1000);
-    fpsCounter.textContent = `${fps} FPS`;
-    fpsCounter.classList.toggle("low", fps < 30);
-    fpsFrameCount = 0;
-    fpsWindowStart = now;
-  }
 
   if (video.readyState >= 2) {
     if (activeGame && activeGame.drawBackground && screen !== "menu" && screen !== "loading") {
