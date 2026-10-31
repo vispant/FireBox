@@ -84,13 +84,14 @@ function compile(gl, type, src) {
 }
 
 export function createPostProcessor(sourceCanvas, targetCanvas) {
+  // desynchronized:true used to be here too -- removed, see the note on
+  // `ctx` in main.js for why (a real black-canvas bug on a Chromebook).
   const glOpts = {
     antialias: false,
     alpha: false,
     premultipliedAlpha: false,
     depth: false,
     stencil: false,
-    desynchronized: true,
     powerPreference: "high-performance",
   };
   const gl = targetCanvas.getContext("webgl", glOpts) || targetCanvas.getContext("experimental-webgl", glOpts);

@@ -17,21 +17,23 @@ import { createRunnerGame } from "./runnerGame.js?v=6";
 import { createHopperGame } from "./hopperGame.js?v=10";
 import { createCarDodgeGame } from "./carDodgeGame.js?v=20";
 import { enableSupersampling } from "./renderScale.js?v=1";
-import { createPostProcessor } from "./shaderPost.js?v=3";
+import { createPostProcessor } from "./shaderPost.js?v=4";
 import { createEmberAnteGame } from "./emberAnte.js?v=4";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
 // alpha:false lets the browser skip per-pixel alpha compositing (the output
 // canvas always paints a full opaque background first, so it never needs
-// it); desynchronized:true lets the browser present frames without waiting
-// on its normal compositor queue where supported -- both raise the frame
-// rate ceiling rather than changing anything visually.
-const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+// it). desynchronized:true was here too (a hint to present frames without
+// waiting on the normal compositor queue) but it's a known source of
+// blank/black canvas rendering on some GPU/driver combinations -- including,
+// per a real bug report, every canvas-based game on a Chromebook -- so it's
+// not worth the marginal latency win.
+const ctx = canvas.getContext("2d", { alpha: false });
 const postCanvas = document.getElementById("post-canvas");
 const threeCanvas = document.getElementById("three-canvas");
 const fxCanvas = document.getElementById("fx-canvas");
-const fxCtx = fxCanvas.getContext("2d", { desynchronized: true });
+const fxCtx = fxCanvas.getContext("2d");
 enableSupersampling(canvas, ctx);
 enableSupersampling(fxCanvas, fxCtx);
 // Shader post-process (bloom, colour grading, chromatic aberration, grain):
