@@ -548,6 +548,21 @@ export function createEmberAnteGame() {
       </button>`;
   }
 
+  // Reusable "card art" shop tile -- a themed gradient panel with a large
+  // centered icon, used for Embers, Vouchers and Spark Packs so each one
+  // reads as an illustrated card instead of a line of small text.
+  function shopCardHtml({ type, icon, name, desc, badge, button }) {
+    return `
+      <div class="shop-card ${type}">
+        <div class="card-art">
+          <span class="card-art-icon">${icon}</span>
+        </div>
+        <strong>${esc(name)}${badge ? ` <span class="voucher-tag">${esc(badge)}</span>` : ""}</strong>
+        <span>${esc(desc)}</span>
+        ${button}
+      </div>`;
+  }
+
   function emberRowHtml(embers) {
     if (!embers.length) return `<p class="ember-empty">No Embers equipped yet</p>`;
     return `<div class="ember-row">${embers
@@ -652,27 +667,32 @@ export function createEmberAnteGame() {
                 const cost = emberCost(run, e);
                 const owned = run.embers.includes(id);
                 const disabled = owned || run.coins < cost || run.embers.length >= run.maxEmbers;
-                return `
-                <div class="shop-card">
-                  <strong>${e.icon} ${esc(e.name)}</strong>
-                  <span>${esc(e.desc)}</span>
-                  <button data-ember-action="buy-ember" data-id="${e.id}" ${disabled ? "disabled" : ""}>${owned ? "✓ Owned" : `Buy — ${cost} coins`}</button>
-                </div>`;
+                return shopCardHtml({
+                  type: "ember",
+                  icon: e.icon,
+                  name: e.name,
+                  desc: e.desc,
+                  button: `<button data-ember-action="buy-ember" data-id="${e.id}" ${disabled ? "disabled" : ""}>${owned ? "✓ Owned" : `Buy — ${cost} coins`}</button>`,
+                });
               })
               .join("")}
-            <div class="shop-card">
-              <strong>🎁 Spark Pack</strong>
-              <span>Open for a choice of 2 random Embers</span>
-              <button data-ember-action="buy-pack" ${run.coins < packCost(run) ? "disabled" : ""}>Open — ${packCost(run)} coins</button>
-            </div>
+            ${shopCardHtml({
+              type: "pack",
+              icon: "🎁",
+              name: "Spark Pack",
+              desc: "Open for a choice of 2 random Embers",
+              button: `<button data-ember-action="buy-pack" ${run.coins < packCost(run) ? "disabled" : ""}>Open — ${packCost(run)} coins</button>`,
+            })}
             ${
               voucher
-                ? `
-            <div class="shop-card voucher">
-              <strong>${voucher.icon} ${esc(voucher.name)} <span class="voucher-tag">Voucher</span></strong>
-              <span>${esc(voucher.desc)}</span>
-              <button data-ember-action="buy-voucher" data-id="${voucher.id}" ${run.coins < voucherCost(run, voucher) ? "disabled" : ""}>Buy — ${voucherCost(run, voucher)} coins</button>
-            </div>`
+                ? shopCardHtml({
+                    type: "voucher",
+                    icon: voucher.icon,
+                    name: voucher.name,
+                    badge: "Voucher",
+                    desc: voucher.desc,
+                    button: `<button data-ember-action="buy-voucher" data-id="${voucher.id}" ${run.coins < voucherCost(run, voucher) ? "disabled" : ""}>Buy — ${voucherCost(run, voucher)} coins</button>`,
+                  })
                 : ""
             }
           </div>
@@ -694,12 +714,13 @@ export function createEmberAnteGame() {
               .map((id) => {
                 const e = emberById(id);
                 const full = run.embers.length >= run.maxEmbers;
-                return `
-                <div class="shop-card">
-                  <strong>${e.icon} ${esc(e.name)}</strong>
-                  <span>${esc(e.desc)}</span>
-                  <button data-ember-action="pick-pack-card" data-id="${e.id}" ${full ? "disabled" : ""}>${full ? "Embers full" : "Pick"}</button>
-                </div>`;
+                return shopCardHtml({
+                  type: "ember",
+                  icon: e.icon,
+                  name: e.name,
+                  desc: e.desc,
+                  button: `<button data-ember-action="pick-pack-card" data-id="${e.id}" ${full ? "disabled" : ""}>${full ? "Embers full" : "Pick"}</button>`,
+                });
               })
               .join("")}
           </div>
