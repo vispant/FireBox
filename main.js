@@ -47,6 +47,22 @@ const hudLeft = document.getElementById("hudLeft");
 const hudRight = document.getElementById("hudRight");
 const pauseBtn = document.getElementById("pauseBtn");
 const overlay = document.getElementById("overlay");
+const errorBanner = document.getElementById("errorBanner");
+
+// Visible crash reporting: if anything throws, show it on-screen instead of
+// only in the console -- some devices (managed Chromebooks especially) make
+// DevTools hard or impossible to reach, so this is often the only way a real
+// bug is ever diagnosable at all.
+function reportError(label, err) {
+  const msg = `[${label}] ${err && err.stack ? err.stack : err}`;
+  console.error(msg);
+  errorBanner.textContent = errorBanner.classList.contains("hidden")
+    ? msg
+    : errorBanner.textContent + "\n\n" + msg;
+  errorBanner.classList.remove("hidden");
+}
+window.addEventListener("error", (e) => reportError("uncaught error", e.error || e.message));
+window.addEventListener("unhandledrejection", (e) => reportError("unhandled promise rejection", e.reason));
 
 let poseLandmarker = null;
 let lastVideoTime = -1;
@@ -283,6 +299,20 @@ function predict() {
     return;
   }
 
+  // If anything below throws, the loop must not silently die -- that would
+  // freeze the canvas on whatever it last painted (often nothing, i.e. a
+  // permanently black screen) while the HUD keeps working fine since it's a
+  // separate DOM layer. Keep retrying every frame and surface the error
+  // on-screen instead.
+  try {
+    predictFrame();
+  } catch (err) {
+    reportError("predict() frame", err);
+  }
+  requestAnimationFrame(predict);
+}
+
+function predictFrame() {
   if (poseLandmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const result = poseLandmarker.detectForVideo(video, performance.now());
@@ -335,7 +365,6 @@ function predict() {
       }
     }
   }
-  requestAnimationFrame(predict);
 }
 
 function populateCameraSelect(selectEl) {

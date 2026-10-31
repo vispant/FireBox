@@ -496,6 +496,35 @@ canvas {
   background: radial-gradient(ellipse at 50% 15%, #14295f 0%, #0b1a45 52%, #060d26 100%);
 }
 
+/* Shown only if the game loop throws, so a real error is diagnosable from a
+   screenshot alone -- no DevTools access needed (which may be locked down
+   on a managed device anyway). */
+#errorBanner {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 200;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.95);
+  border: 1.5px solid rgba(248, 113, 113, 0.6);
+  color: #fecaca;
+  font-family: "Courier New", monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+#errorBanner.hidden {
+  display: none;
+}
+
 /* ---------------- Ember Ante ---------------- */
 
 .ember-screen {
