@@ -139,26 +139,61 @@ export function createPostProcessor(sourceCanvas, targetCanvas) {
   let lastH = 0;
   const start = performance.now();
 
-  function render() {
-    const w = sourceCanvas.width;
-    const h = sourceCanvas.height;
-    if (!w || !h) return;
-    if (targetCanvas.width !== w || targetCanvas.height !== h) {
-      targetCanvas.width = w;
-      targetCanvas.height = h;
-    }
-    if (w !== lastW || h !== lastH) {
-      gl.viewport(0, 0, w, h);
-      lastW = w;
-      lastH = h;
-    }
+  // Some devices (seen on Chromebooks under memory pressure) can report a
+  // "working" WebGL context that later loses its GPU backing, or silently
+  // emits GL errors instead of throwing -- either way the result is an
+  // opaque black canvas sitting on top of the real game forever, since this
+  // canvas has alpha:false. Treat any of that as fatal and permanently fall
+  // back to the plain 2D canvas underneath rather than risk a black screen.
+  let disabled = false;
+  let frameCount = 0;
+  function disableSelf(reason) {
+    if (disabled) return;
+    disabled = true;
+    console.warn("Post-process shader disabled (" + reason + ") -- falling back to the plain canvas.");
+    targetCanvas.classList.add("hidden");
+  }
+  targetCanvas.addEventListener("webglcontextlost", (e) => {
+    e.preventDefault();
+    disableSelf("context lost");
+  });
 
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceCanvas);
-    gl.uniform1i(uTex, 0);
-    gl.uniform2f(uTexel, 1 / w, 1 / h);
-    gl.uniform1f(uTime, (performance.now() - start) / 1000);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  function render() {
+    if (disabled) return;
+    try {
+      if (gl.isContextLost()) {
+        disableSelf("context lost");
+        return;
+      }
+      const w = sourceCanvas.width;
+      const h = sourceCanvas.height;
+      if (!w || !h) return;
+      if (targetCanvas.width !== w || targetCanvas.height !== h) {
+        targetCanvas.width = w;
+        targetCanvas.height = h;
+      }
+      if (w !== lastW || h !== lastH) {
+        gl.viewport(0, 0, w, h);
+        lastW = w;
+        lastH = h;
+      }
+
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceCanvas);
+      gl.uniform1i(uTex, 0);
+      gl.uniform2f(uTexel, 1 / w, 1 / h);
+      gl.uniform1f(uTime, (performance.now() - start) / 1000);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      // Checking gl.getError() forces a GPU sync, so only sample it
+      // occasionally rather than every frame.
+      frameCount++;
+      if (frameCount % 30 === 0 && gl.getError() !== gl.NO_ERROR) {
+        disableSelf("GL error");
+      }
+    } catch (err) {
+      disableSelf(err.message || "render threw");
+    }
   }
 
   return { render, ok: true };

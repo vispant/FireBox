@@ -17,7 +17,7 @@ import { createRunnerGame } from "./runnerGame.js?v=6";
 import { createHopperGame } from "./hopperGame.js?v=10";
 import { createCarDodgeGame } from "./carDodgeGame.js?v=20";
 import { enableSupersampling } from "./renderScale.js?v=1";
-import { createPostProcessor } from "./shaderPost.js?v=2";
+import { createPostProcessor } from "./shaderPost.js?v=3";
 import { createEmberAnteGame } from "./emberAnte.js?v=3";
 
 const video = document.getElementById("webcam");
