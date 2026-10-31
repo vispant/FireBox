@@ -106,6 +106,23 @@ const EMBERS = [
   { id: "momentum", name: "Momentum", icon: "📈", cost: 7, desc: "+1 Mult per hand already played this round", onScore: (ctx) => (ctx.run.handsPlayedThisRound ? { chips: ctx.chips, mult: ctx.mult + ctx.run.handsPlayedThisRound } : null) },
   { id: "economy-class", name: "Economy Class", icon: "💸", cost: 8, desc: "Shop prices reduced 15%", passive: true },
   { id: "second-chance", name: "Second Chance", icon: "🕊️", cost: 10, desc: "Once per run, survive a failed round with +1 hand", passive: true },
+  { id: "deuces-wild", name: "Deuces Wild", icon: "2️⃣", cost: 5, desc: "+3 Mult per 2 played", onScore: (ctx) => { const n = ctx.cards.filter((c) => c.rank === 2).length; return n ? { chips: ctx.chips, mult: ctx.mult + 3 * n } : null; } },
+  { id: "tenfold", name: "Tenfold", icon: "🔟", cost: 5, desc: "+2 Chips per 10 played", onScore: (ctx) => { const n = ctx.cards.filter((c) => c.rank === 10).length; return n ? { chips: ctx.chips + 2 * n, mult: ctx.mult } : null; } },
+  { id: "minimalist", name: "Minimalist", icon: "🎯", cost: 6, desc: "+8 Mult if you play exactly 1 card", onScore: (ctx) => (ctx.cards.length === 1 ? { chips: ctx.chips, mult: ctx.mult + 8 } : null) },
+  { id: "full-spread", name: "Full Spread", icon: "🖐️", cost: 6, desc: "+15 Chips if you play exactly 5 cards", onScore: (ctx) => (ctx.cards.length === 5 ? { chips: ctx.chips + 15, mult: ctx.mult } : null) },
+  { id: "even-steven", name: "Even Steven", icon: "🔷", cost: 6, desc: "+2 Mult per even-rank card played", onScore: (ctx) => { const n = ctx.cards.filter((c) => c.rank % 2 === 0).length; return n ? { chips: ctx.chips, mult: ctx.mult + 2 * n } : null; } },
+  { id: "odd-fire", name: "Odd Fire", icon: "🔶", cost: 5, desc: "+2 Chips per odd-rank card played", onScore: (ctx) => { const n = ctx.cards.filter((c) => c.rank % 2 === 1).length; return n ? { chips: ctx.chips + 2 * n, mult: ctx.mult } : null; } },
+  { id: "double-down", name: "Double Down", icon: "🎰", cost: 8, desc: "10% chance to double this hand's score", onScore: (ctx) => (Math.random() < 0.1 ? { chips: ctx.chips, mult: ctx.mult * 2 } : null) },
+  { id: "interest", name: "Interest", icon: "💹", cost: 9, desc: "+1 coin per 5 coins held when you clear a round (max +5)", onRoundClear: (run) => Math.min(5, Math.floor(run.coins / 5)) },
+  { id: "discard-rebate", name: "Discard Rebate", icon: "🔄", cost: 6, desc: "+1 coin each time you discard", onDiscard: () => 1 },
+  { id: "last-stand", name: "Last Stand", icon: "🛡️", cost: 8, desc: "+15 Mult on your last hand this round", onScore: (ctx) => (ctx.run.handsLeft === 1 ? { chips: ctx.chips, mult: ctx.mult + 15 } : null) },
+  { id: "opening-act", name: "Opening Act", icon: "🎬", cost: 8, desc: "+10 Mult on your first hand this round", onScore: (ctx) => (ctx.run.handsPlayedThisRound === 0 ? { chips: ctx.chips, mult: ctx.mult + 10 } : null) },
+  { id: "flat-rate", name: "Flat Rate", icon: "➕", cost: 6, desc: "+50 Chips, always", onScore: (ctx) => ({ chips: ctx.chips + 50, mult: ctx.mult }) },
+  { id: "multiplier-core", name: "Multiplier Core", icon: "✖️", cost: 9, desc: "×1.2 Mult, always", onScore: (ctx) => ({ chips: ctx.chips, mult: ctx.mult * 1.2 }) },
+  { id: "heart-throb", name: "Heart Throb", icon: "💗", cost: 5, desc: "+5 Chips per Heart played", onScore: (ctx) => { const n = ctx.cards.filter((c) => c.suit.id === "hearts").length; return n ? { chips: ctx.chips + 5 * n, mult: ctx.mult } : null; } },
+  { id: "diamond-mine", name: "Diamond Mine", icon: "💎", cost: 6, desc: "+1 Mult per Diamond played", onScore: (ctx) => { const n = ctx.cards.filter((c) => c.suit.id === "diamonds").length; return n ? { chips: ctx.chips, mult: ctx.mult + n } : null; } },
+  { id: "clubhouse", name: "Clubhouse", icon: "♣️", cost: 5, desc: "+2 Chips per Club played", onScore: (ctx) => { const n = ctx.cards.filter((c) => c.suit.id === "clubs").length; return n ? { chips: ctx.chips + 2 * n, mult: ctx.mult } : null; } },
+  { id: "spade-strike", name: "Spade Strike", icon: "♠️", cost: 6, desc: "+1 Mult per Spade played", onScore: (ctx) => { const n = ctx.cards.filter((c) => c.suit.id === "spades").length; return n ? { chips: ctx.chips, mult: ctx.mult + n } : null; } },
 ];
 function emberById(id) {
   return EMBERS.find((e) => e.id === id);
@@ -120,9 +137,29 @@ const VOUCHERS = [
   { id: "bankroll", name: "Bankroll", icon: "💰", cost: 6, desc: "Gain 15 coins immediately", apply: (run) => { run.coins += 15; } },
   { id: "steady-hand", name: "Steady Hand", icon: "🤲", cost: 9, desc: "+1 discard per round, this run", apply: (run) => { run.discardsPerRound += 1; } },
   { id: "wide-market", name: "Wide Market", icon: "🛒", cost: 11, desc: "+1 Ember offer in the shop, this run", apply: (run) => { run.shopEmberSlots += 1; } },
+  { id: "overflow", name: "Overflow", icon: "🪣", cost: 11, desc: "+1 hand per round, this run", apply: (run) => { run.handsPerRound += 1; } },
+  { id: "loan-shark", name: "Loan Shark", icon: "🦈", cost: 3, desc: "Gain 25 coins now, but shop prices +10% this run", apply: (run) => { run.coins += 25; run.discount *= 1.1; } },
+  { id: "golden-touch", name: "Golden Touch", icon: "✨", cost: 12, desc: "+1 coin every hand you play, this run", apply: () => {} },
+  { id: "trade-routes", name: "Trade Routes", icon: "🚢", cost: 8, desc: "Card removal costs half, this run", apply: () => {} },
+  { id: "vault", name: "Vault", icon: "🔒", cost: 9, desc: "Gain 25 coins immediately", apply: (run) => { run.coins += 25; } },
+  { id: "lucky-charm", name: "Lucky Charm", icon: "🍀", cost: 12, desc: "Spark Packs cost just 1 coin, this run", apply: () => {} },
 ];
 function voucherById(id) {
   return VOUCHERS.find((v) => v.id === id);
+}
+
+// ---------------- Boss rounds (round 3 of every Ante gets a twist) ----------------
+
+const BOSSES = [
+  { id: "the-clock", name: "The Clock", icon: "⏰", desc: "No discards this round" },
+  { id: "the-squeeze", name: "The Squeeze", icon: "🤏", desc: "-1 hand this round" },
+  { id: "the-needle", name: "The Needle", icon: "📍", desc: "Only 1 hand, but the target is 40% lower" },
+  { id: "the-frost", name: "The Frost", icon: "❄️", desc: "-2 cards in your hand this round" },
+  { id: "the-giant", name: "The Giant", icon: "🗻", desc: "Target is 50% higher, but the reward doubles" },
+  { id: "the-toll", name: "The Toll", icon: "💰", desc: "Costs 5 coins to enter this round" },
+];
+function bossById(id) {
+  return BOSSES.find((b) => b.id === id);
 }
 
 // ---------------- Save data (persistent across runs) ----------------
@@ -197,16 +234,21 @@ function clearActiveRun() {
 
 // ---------------- Round economy ----------------
 
-function roundTarget(ante, round) {
-  return Math.round(60 * Math.pow(1.45, ante - 1) * (1 + (round - 1) * 0.35));
+function roundTarget(run) {
+  let t = Math.round(60 * Math.pow(1.45, run.ante - 1) * (1 + (run.round - 1) * 0.35));
+  if (run.bossEffect === "the-needle") t = Math.round(t * 0.6);
+  if (run.bossEffect === "the-giant") t = Math.round(t * 1.5);
+  return t;
 }
 function previewNextRound(run) {
   if (run.round < 3) return { ante: run.ante, round: run.round + 1 };
   if (run.ante < FINAL_ANTE) return { ante: run.ante + 1, round: 1 };
   return { ante: run.ante, round: run.round, final: true };
 }
-function roundReward(round, handsLeft) {
-  return 4 + handsLeft * 2 + round;
+function roundReward(run) {
+  let r = 4 + run.handsLeft * 2 + run.round;
+  if (run.bossEffect === "the-giant") r *= 2;
+  return r;
 }
 function priceMultiplier(run) {
   let mult = run.discount || 1;
@@ -220,9 +262,12 @@ function voucherCost(run, voucher) {
   return Math.max(1, Math.round(voucher.cost * priceMultiplier(run)));
 }
 function removeCardCost(run) {
-  return Math.max(1, Math.round(5 * priceMultiplier(run)));
+  let mult = priceMultiplier(run);
+  if (run.purchasedVouchers?.includes("trade-routes")) mult *= 0.5;
+  return Math.max(1, Math.round(5 * mult));
 }
 function packCost(run) {
+  if (run.purchasedVouchers?.includes("lucky-charm")) return 1;
   return Math.max(1, Math.round(PACK_COST * priceMultiplier(run)));
 }
 
@@ -294,6 +339,7 @@ export function createEmberAnteGame() {
       selected: [],
       embers: save.perks["head-start"] ? [EMBERS[Math.floor(Math.random() * EMBERS.length)].id] : [],
       purchasedVouchers: [],
+      bossEffect: null,
       secondChanceUsed: false,
       handsPerRound,
       discardsPerRound,
@@ -313,13 +359,23 @@ export function createEmberAnteGame() {
   }
 
   function startRound() {
+    run.bossEffect = run.round === 3 ? shuffle(BOSSES)[0].id : null;
+    let handSize = run.handSize;
+    let handsThisRound = run.handsPerRound;
+    let discardsThisRound = run.discardsPerRound;
+    if (run.bossEffect === "the-squeeze") handsThisRound = Math.max(2, handsThisRound - 1);
+    if (run.bossEffect === "the-needle") handsThisRound = 1;
+    if (run.bossEffect === "the-clock") discardsThisRound = 0;
+    if (run.bossEffect === "the-frost") handSize = Math.max(5, handSize - 2);
+    if (run.bossEffect === "the-toll") run.coins = Math.max(0, run.coins - 5);
+
     run.drawPile = shuffle(run.deck);
     run.discardPile = [];
-    run.hand = drawCards(run, run.handSize);
+    run.hand = drawCards(run, handSize);
     sortHandInPlace(run, sortMode);
     run.selected = [];
-    run.handsLeft = run.handsPerRound;
-    run.discardsLeft = run.discardsPerRound;
+    run.handsLeft = handsThisRound;
+    run.discardsLeft = discardsThisRound;
     run.handsPlayedThisRound = 0;
     run.roundScore = 0;
     saveActiveRun(run);
@@ -352,9 +408,14 @@ export function createEmberAnteGame() {
     run.roundScore += result.total;
     run.handsPlayedThisRound += 1;
     run.handsLeft -= 1;
+    if (run.purchasedVouchers?.includes("golden-touch")) run.coins += 1;
 
-    if (run.roundScore >= roundTarget(run.ante, run.round)) {
-      const coinsEarned = roundReward(run.round, run.handsLeft);
+    if (run.roundScore >= roundTarget(run)) {
+      let coinsEarned = roundReward(run);
+      for (const id of run.embers) {
+        const e = emberById(id);
+        if (e?.onRoundClear) coinsEarned += e.onRoundClear(run);
+      }
       run.coins += coinsEarned;
       saveActiveRun(run);
       renderRoundResult(true, result, coinsEarned);
@@ -385,6 +446,10 @@ export function createEmberAnteGame() {
     sortHandInPlace(run, sortMode);
     run.selected = [];
     run.discardsLeft -= 1;
+    for (const id of run.embers) {
+      const e = emberById(id);
+      if (e?.onDiscard) run.coins += e.onDiscard(run);
+    }
     saveActiveRun(run);
     renderPlaying();
   }
@@ -474,9 +539,10 @@ export function createEmberAnteGame() {
   let root = null;
   let voucherOffer = null;
 
-  function cardHtml(card, selected) {
+  function cardHtml(card, selected, index) {
+    const delay = index != null ? ` style="animation-delay:${Math.min(index, 8) * 0.035}s"` : "";
     return `
-      <button class="playing-card ${card.suit.color} ${selected ? "selected" : ""}" data-ember-action="toggle-card" data-id="${card.id}">
+      <button class="playing-card ${card.suit.color} ${selected ? "selected" : ""}" data-ember-action="toggle-card" data-id="${card.id}"${delay}>
         <span class="card-rank">${rankLabel(card.rank)}</span>
         <span class="card-suit">${card.suit.symbol}</span>
       </button>`;
@@ -514,15 +580,17 @@ export function createEmberAnteGame() {
   }
 
   function renderPlaying() {
-    const target = roundTarget(run.ante, run.round);
+    const target = roundTarget(run);
     const pct = Math.min(100, Math.round((run.roundScore / target) * 100));
     const selectedCards = run.hand.filter((c) => run.selected.includes(c.id));
     const preview = selectedCards.length ? computeScore(run, selectedCards) : null;
     const deckLeft = run.drawPile.length + run.discardPile.length;
+    const boss = run.bossEffect ? bossById(run.bossEffect) : null;
     root.innerHTML = `
       <div class="ember-layout">
         ${sidebarHtml()}
         <div class="ember-main">
+          ${boss ? `<div class="boss-banner">${boss.icon} <strong>${esc(boss.name)}</strong><span>${esc(boss.desc)}</span></div>` : ""}
           <div class="ember-blind-card">
             <span class="ember-blind-label">Round ${run.round} of 3</span>
             <span class="ember-blind-target">Score at least <strong>${target}</strong></span>
@@ -532,7 +600,7 @@ export function createEmberAnteGame() {
           <div class="ember-preview">${
             preview ? `${preview.name} — ${preview.chips} chips × ${preview.mult} mult = <strong>${preview.total}</strong>` : "Select up to 5 cards"
           }</div>
-          <div class="hand-tray">${run.hand.map((c) => cardHtml(c, run.selected.includes(c.id))).join("")}</div>
+          <div class="hand-tray">${run.hand.map((c, i) => cardHtml(c, run.selected.includes(c.id), i)).join("")}</div>
           <div class="ember-subrow">
             <div class="sort-row">
               <button class="chip-toggle ${sortMode === "rank" ? "active" : ""}" data-ember-action="sort-rank">Sort: Rank</button>
