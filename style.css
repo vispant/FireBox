@@ -25,104 +25,6 @@ html, body {
   -webkit-user-select: none;
 }
 
-video {
-  display: none;
-}
-
-canvas {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  touch-action: none;
-}
-
-#canvasStack {
-  position: absolute;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-}
-
-#post-canvas,
-#three-canvas,
-#fx-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-}
-
-#post-canvas.hidden,
-#three-canvas.hidden,
-#fx-canvas.hidden {
-  display: none;
-}
-
-#hud {
-  position: absolute;
-  top: 18px;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 0 16px;
-}
-
-#hud.hidden {
-  display: none;
-}
-
-#hudLeft,
-#hudRight {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 13px 26px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.88));
-  border: 1.5px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  font-size: 1.35rem;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-}
-
-#hudLeft {
-  color: #fbbf24;
-}
-
-#hudRight {
-  color: #f87171;
-}
-
-#pauseBtn {
-  padding: 12px 26px;
-  font-size: 1.05rem;
-  font-weight: 700;
-  border-radius: 999px;
-  border: 1.5px solid rgba(255, 255, 255, 0.18);
-  background: linear-gradient(135deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.88));
-  color: #e2e8f0;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  cursor: pointer;
-  transition: border-color 0.12s ease, transform 0.12s ease;
-}
-
-#pauseBtn:hover {
-  border-color: rgba(255, 255, 255, 0.4);
-  transform: translateY(-1px);
-}
-
-#pauseBtn:active {
-  transform: translateY(0);
-}
-
 #overlay {
   position: absolute;
   inset: 0;
@@ -199,16 +101,6 @@ canvas {
   color: #94a3b8;
 }
 
-.selectRow select {
-  background: #1e293b;
-  color: #e2e8f0;
-  border: 1px solid #334155;
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 0.9rem;
-  max-width: 260px;
-}
-
 .auth-form {
   display: flex;
   flex-direction: column;
@@ -254,14 +146,6 @@ canvas {
   color: #93c5fd;
   transform: none;
   box-shadow: none;
-}
-
-.room-code {
-  font-family: "Courier New", monospace;
-  font-size: 2.4rem;
-  font-weight: 800;
-  letter-spacing: 0.15em;
-  color: #fbbf24;
 }
 
 .turnstile-box {
@@ -330,18 +214,6 @@ canvas {
   font-size: 0.88rem;
   color: #94a3b8;
   line-height: 1.4;
-}
-
-#overlay .game-card span.badge-hot {
-  display: inline-block;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.12);
-  border: 1px solid rgba(251, 191, 36, 0.4);
-  border-radius: 999px;
-  padding: 2px 8px;
-  line-height: 1.6;
 }
 
 .upgrade-list {
@@ -452,43 +324,6 @@ canvas {
   color: #64748b;
   font-size: 0.9rem;
   min-height: 1.2em;
-}
-
-/* Phones: shrink the HUD pills so score, pause and lives fit on one row instead of wrapping over the play area. */
-@media (max-width: 560px) {
-  #hud {
-    top: 10px;
-    gap: 6px;
-    padding: 0 8px;
-    flex-wrap: nowrap;
-  }
-
-  #hudLeft,
-  #hudRight {
-    padding: 7px 11px;
-    font-size: 0.85rem;
-    gap: 4px;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  #hudLeft {
-    max-width: 58vw;
-  }
-
-  #pauseBtn {
-    padding: 8px 12px;
-    font-size: 0.85rem;
-  }
-}
-
-/* Soft edge darkening over every game for depth (ignores clicks). */
-#vignette {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(ellipse at center, rgba(2, 6, 23, 0) 58%, rgba(2, 6, 23, 0.34) 100%);
 }
 
 /* Menus (loading, sign-in, hub, game lists): solid dark-blue background instead of the translucent scrim. */

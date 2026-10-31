@@ -4,34 +4,19 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>FireBox</title>
-<link rel="stylesheet" href="style.css?v=30" />
+<link rel="stylesheet" href="style.css?v=31" />
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 <body>
   <div id="app">
-    <video id="webcam" autoplay playsinline muted></video>
-    <div id="canvasStack">
-      <canvas id="output"></canvas>
-      <canvas id="post-canvas"></canvas>
-      <canvas id="three-canvas" class="hidden"></canvas>
-      <canvas id="fx-canvas" class="hidden"></canvas>
-      <div id="vignette"></div>
-    </div>
-
-    <div id="hud" class="hidden">
-      <div id="hudLeft">Score: 0</div>
-      <button id="pauseBtn" type="button">Pause</button>
-      <div id="hudRight">Lives: ❤❤❤</div>
-    </div>
-
     <div id="overlay">
       <h1>FireBox</h1>
-      <p id="status">Loading camera + pose model...</p>
+      <p id="status">Loading...</p>
     </div>
 
     <div id="errorBanner" class="hidden"></div>
   </div>
 
-  <script type="module" src="main.js?v=120"></script>
+  <script type="module" src="main.js?v=121"></script>
 </body>
 </html>

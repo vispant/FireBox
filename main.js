@@ -1,51 +1,7 @@
-import {
-  PoseLandmarker,
-  FilesetResolver,
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
-import { createCatchGame } from "./catchGame.js?v=20";
-import { createFighterGame } from "./fighterGame.js?v=18";
-import { createGoalkeeperGame } from "./goalkeeperGame.js?v=6";
-import { createPenaltyKicksGame } from "./penaltyKicksGame.js?v=5";
-import { createPersonSegmenter } from "./segmentation.js?v=3";
 import { signUp, signIn, signOut, getCurrentUser, fetchCountry, supabase } from "./auth.js?v=1";
 import { TURNSTILE_SITE_KEY, SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=1";
-import { createFlappyGame } from "./flappyGame.js?v=6";
-import { createWhackGame } from "./whackGame.js?v=6";
-import { createSnakeArenaGame } from "./snakeArenaGame.js?v=17";
-import { createBrickGame } from "./brickGame.js?v=8";
-import { createRunnerGame } from "./runnerGame.js?v=6";
-import { createHopperGame } from "./hopperGame.js?v=10";
-import { createCarDodgeGame } from "./carDodgeGame.js?v=20";
-import { enableSupersampling } from "./renderScale.js?v=1";
-import { createPostProcessor } from "./shaderPost.js?v=4";
 import { createEmberAnteGame } from "./emberAnte.js?v=4";
 
-const video = document.getElementById("webcam");
-const canvas = document.getElementById("output");
-// alpha:false lets the browser skip per-pixel alpha compositing (the output
-// canvas always paints a full opaque background first, so it never needs
-// it). desynchronized:true was here too (a hint to present frames without
-// waiting on the normal compositor queue) but it's a known source of
-// blank/black canvas rendering on some GPU/driver combinations -- including,
-// per a real bug report, every canvas-based game on a Chromebook -- so it's
-// not worth the marginal latency win.
-const ctx = canvas.getContext("2d", { alpha: false });
-const postCanvas = document.getElementById("post-canvas");
-const threeCanvas = document.getElementById("three-canvas");
-const fxCanvas = document.getElementById("fx-canvas");
-const fxCtx = fxCanvas.getContext("2d");
-enableSupersampling(canvas, ctx);
-enableSupersampling(fxCanvas, fxCtx);
-// Shader post-process (bloom, colour grading, chromatic aberration, grain):
-// re-renders whatever `canvas` just drew onto `postCanvas`, which sits right
-// on top of it, every frame -- every game gets this for free, no game file
-// needs any changes. Falls back to leaving `canvas` visible directly if
-// WebGL isn't available.
-const postProcessor = createPostProcessor(canvas, postCanvas);
-const hud = document.getElementById("hud");
-const hudLeft = document.getElementById("hudLeft");
-const hudRight = document.getElementById("hudRight");
-const pauseBtn = document.getElementById("pauseBtn");
 const overlay = document.getElementById("overlay");
 const errorBanner = document.getElementById("errorBanner");
 
@@ -64,60 +20,9 @@ function reportError(label, err) {
 window.addEventListener("error", (e) => reportError("uncaught error", e.error || e.message));
 window.addEventListener("unhandledrejection", (e) => reportError("unhandled promise rejection", e.reason));
 
-let poseLandmarker = null;
-let lastVideoTime = -1;
-let lastFrameTime = 0;
-// Cap the game loop at 60fps instead of letting it run uncapped on high
-// refresh-rate displays (120/144/240Hz) -- rAF still fires at the display's
-// native rate, this just skips doing any work on the frames in between.
-const TARGET_FRAME_MS = 1000 / 60;
-// Adaptive quality: if a device can't sustain a smooth frame rate with the
-// post-process shader on, drop it automatically rather than leave gameplay
-// janky. Judged on a rolling window so one slow frame (asset load, GC pause)
-// doesn't trip it.
-let postFrameTimes = [];
-let postDisabled = false;
-let latestLandmarks = null;
-
-let currentStream = null;
-let availableCameras = [];
-let activeDeviceId = null;
-let selectedBgTheme = "arena";
-const personSegmenter = createPersonSegmenter();
-
-const BG_THEMES = [
-  { value: "arena", label: "Fighting Arena" },
-  { value: "desert", label: "Desert" },
-  { value: "city", label: "City" },
-  { value: "battlefield", label: "Battlefield" },
-];
-
-function bgSelectRowHtml() {
-  return `
-    <div class="selectRow">
-      <label for="bgSelect">Fist Fighter background:</label>
-      <select id="bgSelect">
-        ${BG_THEMES.map((t) => `<option value="${t.value}">${t.label}</option>`).join("")}
-      </select>
-    </div>
-  `;
-}
-
-function wireBgSelect() {
-  const bgSelect = document.getElementById("bgSelect");
-  if (!bgSelect) return;
-  bgSelect.value = selectedBgTheme;
-  bgSelect.addEventListener("change", (e) => {
-    selectedBgTheme = e.target.value;
-  });
-}
-
-let screen = "loading"; // loading | auth | hub | menu | normalMenu | lobby | playing | paused | gameover
-let activeGame = null;
+let screen = "loading"; // loading | auth | hub | menu
 let currentUser = null;
 let turnstileWidgetId = null;
-let modelsReady = false;
-let predictLoopStarted = false;
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
@@ -136,19 +41,9 @@ function waitForTurnstile(cb, attempts = 0) {
     setTimeout(() => waitForTurnstile(cb, attempts + 1), 100);
   }
 }
-const games = [
-  createCatchGame({ canvas, ctx, video }),
-  createFighterGame({ canvas, ctx, video, threeCanvas, fxCanvas, fxCtx }),
-  createGoalkeeperGame({ canvas, ctx }),
-  createPenaltyKicksGame({ canvas, ctx, getPlayerName }),
-];
-function getPlayerName() {
-  return currentUser?.user_metadata?.name || currentUser?.email || "Guest";
-}
 
-// Full standalone web apps (built elsewhere, e.g. Google AI Studio) that don't
-// use the shared canvas game loop at all -- shown via <iframe> instead of the
-// reset/update/draw interface every canvas game implements.
+// Full standalone web apps (built elsewhere, e.g. Google AI Studio) that run
+// via <iframe> instead of any in-repo game code.
 const webGames = [
   {
     id: "sovereign-chess",
@@ -159,223 +54,15 @@ const webGames = [
   },
 ];
 
-const normalGames = [
-  createFlappyGame({ canvas, ctx }),
-  createWhackGame({ canvas, ctx }),
-  createSnakeArenaGame({ canvas, ctx, getPlayerName }),
-  createBrickGame({ canvas, ctx }),
-  createRunnerGame({ canvas, ctx }),
-  createHopperGame({ canvas, ctx }),
-  createCarDodgeGame({ canvas, ctx }),
-];
-
-// Built-in apps that, like webGames, don't use the shared canvas game loop --
-// but instead of an external <iframe>, these mount their own DOM/CSS UI
-// directly into #overlay for their whole lifetime (see playAppGame()).
+// Built-in apps that, like webGames, mount their own DOM/CSS UI directly
+// into #overlay for their whole lifetime instead of a shared canvas loop
+// (see playAppGame()).
 const appGames = [createEmberAnteGame()];
-
-// Picks a canvas/camera resolution matching this device's actual viewport shape
-// (instead of always requesting/using a fixed 960x540 landscape frame), so
-// object-fit:cover on the outer canvas doesn't have to crop away most of a
-// portrait phone screen. Baseline stays 960x540 for a typical laptop window —
-// this only changes behavior when the real aspect ratio differs meaningfully.
-function computeViewportResolution() {
-  const aspect = window.innerWidth / window.innerHeight;
-  const BASE = 540;
-  const MAX_DIM = 1280;
-  let width, height;
-  if (aspect >= 1) {
-    height = BASE;
-    width = Math.round(BASE * aspect);
-    if (width > MAX_DIM) {
-      width = MAX_DIM;
-      height = Math.round(MAX_DIM / aspect);
-    }
-  } else {
-    width = BASE;
-    height = Math.round(BASE / aspect);
-    if (height > MAX_DIM) {
-      height = MAX_DIM;
-      width = Math.round(MAX_DIM * aspect);
-    }
-  }
-  return { width, height };
-}
 
 function setScreen(next) {
   screen = next;
-  // Menu-style screens get a solid dark-blue backdrop so the webcam/game canvas never shows through.
-  overlay.classList.toggle("solid", ["loading", "auth", "hub", "menu", "normalMenu"].includes(next));
-  hud.classList.toggle("hidden", screen !== "playing");
-}
-
-async function setupCamera(deviceId) {
-  if (currentStream) {
-    currentStream.getTracks().forEach((t) => t.stop());
-  }
-
-  const res = computeViewportResolution();
-  const videoConstraints = { width: res.width, height: res.height };
-  if (deviceId) videoConstraints.deviceId = { exact: deviceId };
-  else videoConstraints.facingMode = { ideal: "user" };
-
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: videoConstraints,
-    audio: false,
-  });
-  currentStream = stream;
-  video.srcObject = stream;
-  await new Promise((resolve) => {
-    video.onloadedmetadata = () => {
-      video.play();
-      resolve();
-    };
-  });
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  threeCanvas.width = canvas.width;
-  threeCanvas.height = canvas.height;
-  fxCanvas.width = canvas.width;
-  fxCanvas.height = canvas.height;
-}
-
-async function refreshCameraList(preferredDeviceId) {
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  availableCameras = devices.filter((d) => d.kind === "videoinput");
-
-  let selected = preferredDeviceId;
-  if (!selected) {
-    const logitech = availableCameras.find((c) => /logitech/i.test(c.label));
-    selected = logitech ? logitech.deviceId : availableCameras[0]?.deviceId;
-  }
-  activeDeviceId = selected;
-  return selected;
-}
-
-async function setupPoseLandmarker() {
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm"
-  );
-  const modelAssetPath =
-    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task";
-
-  try {
-    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath, delegate: "GPU" },
-      runningMode: "VIDEO",
-      numPoses: 1,
-    });
-  } catch (err) {
-    console.warn("GPU delegate unavailable, falling back to CPU.", err);
-    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath, delegate: "CPU" },
-      runningMode: "VIDEO",
-      numPoses: 1,
-    });
-  }
-}
-
-function drawCameraBackground() {
-  ctx.save();
-  ctx.translate(canvas.width, 0);
-  ctx.scale(-1, 1);
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  ctx.restore();
-
-  ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-}
-
-function updateHud() {
-  const info = activeGame.getHud();
-  hudLeft.textContent = info.left;
-  hudRight.textContent = info.right;
-}
-
-function predict() {
-  const frameNow = performance.now();
-  if (lastFrameTime && frameNow - lastFrameTime < TARGET_FRAME_MS - 1) {
-    requestAnimationFrame(predict);
-    return;
-  }
-
-  // If anything below throws, the loop must not silently die -- that would
-  // freeze the canvas on whatever it last painted (often nothing, i.e. a
-  // permanently black screen) while the HUD keeps working fine since it's a
-  // separate DOM layer. Keep retrying every frame and surface the error
-  // on-screen instead.
-  try {
-    predictFrame();
-  } catch (err) {
-    reportError("predict() frame", err);
-  }
-  requestAnimationFrame(predict);
-}
-
-function predictFrame() {
-  if (poseLandmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
-    lastVideoTime = video.currentTime;
-    const result = poseLandmarker.detectForVideo(video, performance.now());
-    latestLandmarks = result.landmarks && result.landmarks[0] ? result.landmarks[0] : null;
-  }
-
-  const now = performance.now();
-  const dt = lastFrameTime ? now - lastFrameTime : 16;
-  lastFrameTime = now;
-
-  if (video.readyState >= 2) {
-    if (activeGame && activeGame.drawBackground && screen !== "menu" && screen !== "loading") {
-      let cutout = null;
-      if (activeGame.needsPersonCutout && personSegmenter.isReady()) {
-        personSegmenter.update(video, performance.now());
-        cutout = personSegmenter.getPersonCutout(video, canvas.width, canvas.height);
-      }
-      activeGame.drawBackground(video, cutout, selectedBgTheme);
-    } else {
-      drawCameraBackground();
-    }
-  }
-
-  if (screen === "playing" && activeGame) {
-    activeGame.update(dt, latestLandmarks);
-    if (activeGame.draw3D) activeGame.draw3D();
-    activeGame.draw(latestLandmarks);
-    updateHud();
-    if (activeGame.isOver()) {
-      endGameSession();
-      setScreen("gameover");
-      overlay.classList.remove("hidden");
-      renderGameOver(activeGame.getOverResult());
-    }
-  } else if (screen === "paused" && activeGame) {
-    if (activeGame.draw3D) activeGame.draw3D();
-    activeGame.draw(latestLandmarks);
-  }
-
-  if (!postDisabled) {
-    postProcessor.render();
-    postFrameTimes.push(dt);
-    if (postFrameTimes.length > 90) postFrameTimes.shift();
-    if (postFrameTimes.length === 90) {
-      const avg = postFrameTimes.reduce((a, b) => a + b, 0) / postFrameTimes.length;
-      if (avg > 42) {
-        postDisabled = true;
-        postCanvas.classList.add("hidden");
-        console.warn("Post-process shader disabled automatically: this device can't sustain a smooth frame rate with it on.");
-      }
-    }
-  }
-}
-
-function populateCameraSelect(selectEl) {
-  selectEl.innerHTML = "";
-  availableCameras.forEach((cam, i) => {
-    const opt = document.createElement("option");
-    opt.value = cam.deviceId;
-    opt.textContent = cam.label || `Camera ${i + 1}`;
-    selectEl.appendChild(opt);
-  });
-  if (activeDeviceId) selectEl.value = activeDeviceId;
+  // Menu-style screens get a solid dark-blue backdrop.
+  overlay.classList.toggle("solid", ["loading", "auth", "hub", "menu"].includes(next));
 }
 
 function renderAuth(mode = "signup") {
@@ -455,8 +142,6 @@ function renderAuth(mode = "signup") {
 function showAuth() {
   setScreen("auth");
   overlay.classList.remove("hidden");
-  threeCanvas.classList.add("hidden");
-  fxCanvas.classList.add("hidden");
   renderAuth("signup");
 }
 
@@ -470,37 +155,52 @@ function renderHub() {
           )}</span><button class="auth-toggle" type="button" data-action="sign-out">Sign Out</button></div>`
         : ""
     }
-    <p>Choose a category to get started.</p>
+    <p>Pick a game.</p>
     <div class="game-grid">
-      <button class="game-card" data-action="open-camera-games">
-        <div class="card-body">
-          <strong>📷 Camera Games</strong>
-          <span>Motion-tracking games that use your webcam. We'll only ask for camera access once you open this.</span>
-        </div>
-      </button>
-      <button class="game-card" data-action="open-normal-games">
-        <div class="card-body">
-          <strong>🕹️ Normal Games</strong>
-          <span>Classic games you play with your keyboard or mouse — no camera needed.</span>
-        </div>
-      </button>
+      ${webGames
+        .map(
+          (g) => `
+        <button class="game-card" data-action="open-web-game" data-web-id="${g.id}">
+          ${g.thumbnail ? `<img class="card-thumb" src="${g.thumbnail}" alt="" />` : ""}
+          <div class="card-body">
+            <strong>${escapeHtml(g.title)}</strong>
+            <span>${escapeHtml(g.description)}</span>
+          </div>
+        </button>`
+        )
+        .join("")}
+      ${appGames
+        .map(
+          (g) => `
+        <button class="game-card" data-action="open-app-game" data-app-id="${g.id}">
+          ${g.thumbnail ? `<img class="card-thumb" src="${g.thumbnail}" alt="" />` : ""}
+          <div class="card-body">
+            <strong>${escapeHtml(g.title)}</strong>
+            <span>${escapeHtml(g.description)}</span>
+          </div>
+        </button>`
+        )
+        .join("")}
     </div>
   `;
 }
 
-// Full standalone apps (e.g. Google AI Studio builds) don't use the shared
-// canvas game loop, so this skips reset/update/draw entirely and just shows
-// the app in an iframe. Launched from a card in the Normal Games list.
+function showHub() {
+  setScreen("hub");
+  overlay.classList.remove("hidden");
+  renderHub();
+}
+
+// Full standalone apps (e.g. Google AI Studio builds) shown in an iframe.
 function playWebGame(id) {
   const webGame = webGames.find((g) => g.id === id);
   if (!webGame) return;
-  activeGame = null;
   beginGameSession(webGame.id);
   setScreen("menu");
   overlay.classList.remove("hidden");
   overlay.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;width:100%;max-width:1100px;">
-      <button class="auth-toggle" type="button" data-action="open-normal-games">← Back</button>
+      <button class="auth-toggle" type="button" data-action="back-to-hub">← Back</button>
       <h1 style="margin:0;font-size:1.4rem;flex:1;text-align:left;">${escapeHtml(webGame.title)}</h1>
     </div>
     <iframe
@@ -514,8 +214,7 @@ function playWebGame(id) {
 
 let activeAppUnmount = null;
 
-// Built-in apps (see appGames above): like playWebGame, this skips
-// reset/update/draw entirely, but mounts the app's own DOM UI directly into
+// Built-in apps (see appGames above): mount their own DOM UI directly into
 // #overlay instead of an <iframe> src.
 function playAppGame(id) {
   const appGame = appGames.find((g) => g.id === id);
@@ -524,7 +223,6 @@ function playAppGame(id) {
     activeAppUnmount();
     activeAppUnmount = null;
   }
-  activeGame = null;
   beginGameSession(appGame.id);
   setScreen("menu");
   overlay.classList.remove("hidden");
@@ -535,172 +233,13 @@ function playAppGame(id) {
         activeAppUnmount = null;
       }
       endGameSession();
-      openNormalGames();
+      showHub();
     },
   });
 }
 
-function showHub() {
-  setScreen("hub");
-  overlay.classList.remove("hidden");
-  threeCanvas.classList.add("hidden");
-  fxCanvas.classList.add("hidden");
-  renderHub();
-}
-
-function ensurePredictLoop() {
-  if (!predictLoopStarted) {
-    predictLoopStarted = true;
-    requestAnimationFrame(predict);
-  }
-}
-
-async function startCameraGames() {
-  setScreen("loading");
-  overlay.innerHTML = `<h1>Camera Games</h1><p id="status">Requesting camera access...</p>`;
-  try {
-    if (!currentStream) {
-      await setupCamera();
-      const preferred = await refreshCameraList(activeDeviceId);
-      if (preferred) await setupCamera(preferred);
-    }
-
-    if (!modelsReady) {
-      document.getElementById("status").textContent = "Loading pose model...";
-      await setupPoseLandmarker();
-
-      document.getElementById("status").textContent = "Loading background removal...";
-      try {
-        await personSegmenter.init();
-      } catch (err) {
-        console.warn("Person segmentation unavailable, backgrounds will use the plain camera view instead.", err);
-      }
-      modelsReady = true;
-    }
-
-    ensurePredictLoop();
-    showMenu();
-  } catch (err) {
-    console.error(err);
-    overlay.innerHTML = `<h1>Camera Games</h1><p>Could not start camera or model: ${err.message} (check camera permissions, that no other app is using the camera, and that you're on http://localhost or https).</p><button class="secondary" data-action="back-to-hub">Back</button>`;
-  }
-}
-
-function openNormalGames() {
-  const res = computeViewportResolution();
-  canvas.width = res.width;
-  canvas.height = res.height;
-  threeCanvas.width = canvas.width;
-  threeCanvas.height = canvas.height;
-  fxCanvas.width = canvas.width;
-  fxCanvas.height = canvas.height;
-  ensurePredictLoop();
-  showNormalMenu();
-}
-
 function exitToHub() {
-  if (currentStream) {
-    currentStream.getTracks().forEach((t) => t.stop());
-    currentStream = null;
-  }
   showHub();
-}
-
-function renderMenu() {
-  overlay.innerHTML = `
-    <h1>Camera Games</h1>
-    <button class="auth-toggle" type="button" data-action="back-to-hub">← Back</button>
-    <p>Pick a game. Stand back so your whole body is in view — Fist Fighter tracks your feet too.</p>
-    <div class="selectRow">
-      <label for="cameraSelect">Camera:</label>
-      <select id="cameraSelect"></select>
-    </div>
-    <div class="game-grid">
-      ${games
-        .map(
-          (g) => `
-        <button class="game-card" data-action="select-game" data-game-id="${g.id}">
-          ${g.thumbnail ? `<img class="card-thumb" src="${g.thumbnail}" alt="" />` : ""}
-          <div class="card-body">
-            <strong>${g.title}</strong>
-            <span>${g.description}</span>
-          </div>
-        </button>`
-        )
-        .join("")}
-    </div>
-    <button class="secondary" data-action="reset-progress">Reset Fist Fighter Progress</button>
-    <button class="secondary" data-action="test-sound">🔊 Test Sound</button>
-    <p id="soundStatus"></p>
-  `;
-
-  const cameraSelect = document.getElementById("cameraSelect");
-  populateCameraSelect(cameraSelect);
-  cameraSelect.addEventListener("change", async (e) => {
-    const id = e.target.value;
-    try {
-      await setupCamera(id);
-      activeDeviceId = id;
-    } catch (err) {
-      console.error(err);
-    }
-  });
-}
-
-function renderPauseMenu() {
-  const info = activeGame.getPauseInfo ? activeGame.getPauseInfo() : null;
-  overlay.innerHTML = `
-    <h1>⏸️ Paused</h1>
-    ${
-      info
-        ? `<p>Coins: ${info.coins}</p>
-           <div class="upgrade-list">
-             ${info.options
-               .map(
-                 (o) => `
-               <button data-action="upgrade" data-upgrade-id="${o.id}" ${
-                   info.coins < o.cost ? "disabled" : ""
-                 }>${o.label} — ${o.cost} coins</button>`
-               )
-               .join("")}
-           </div>`
-        : `<p>Take a breather.</p>`
-    }
-    ${activeGame.drawBackground ? bgSelectRowHtml() : ""}
-    <button data-action="resume">Resume</button>
-    <button class="secondary" data-action="quit">Quit to Menu</button>
-    ${
-      activeGame.resetProgress
-        ? `<button class="secondary" data-action="reset-progress">Reset Fist Fighter Progress</button>`
-        : ""
-    }
-  `;
-  wireBgSelect();
-}
-
-function renderResetConfirm() {
-  overlay.innerHTML = `
-    <h1>Reset Progress?</h1>
-    <p>This permanently deletes your Fist Fighter coins, upgrades, and stage progress. This can't be undone.</p>
-    <button data-action="confirm-reset">Yes, Reset Everything</button>
-    <button class="secondary" data-action="cancel-reset">Cancel</button>
-  `;
-}
-
-function renderGameOver(result) {
-  const isBest = /new best/i.test(result.message);
-  const isWin = !isBest && /\b(won|victory|winner)\b/i.test(result.title + " " + result.message);
-  const icon = isBest ? "🏆" : isWin ? "🎉" : "🏁";
-  overlay.innerHTML = `
-    <div class="result-card${isBest ? " is-best" : ""}">
-      <span class="result-icon">${icon}</span>
-      <h1>${result.title}</h1>
-      <p>${result.message}</p>
-    </div>
-    <button data-action="retry">Play Again</button>
-    ${activeGame.renderShop ? `<button class="secondary" data-action="shop">🚗 Garage</button>` : ""}
-    <button class="secondary" data-action="quit">Back to Menu</button>
-  `;
 }
 
 let sessionRowId = null;
@@ -790,152 +329,6 @@ function endGameSessionOnUnload() {
 }
 window.addEventListener("pagehide", endGameSessionOnUnload);
 
-function enterPlaying() {
-  beginGameSession(activeGame.id);
-  setScreen("playing");
-  overlay.classList.add("hidden");
-  threeCanvas.classList.toggle("hidden", !activeGame.draw3D);
-  fxCanvas.classList.toggle("hidden", !activeGame.draw3D);
-}
-
-function startGame(gameId) {
-  activeGame = games.find((g) => g.id === gameId) || normalGames.find((g) => g.id === gameId);
-  if (activeGame.primeAudio) activeGame.primeAudio();
-  if (activeGame.needsLobby) {
-    setScreen("lobby");
-    overlay.classList.remove("hidden");
-    activeGame.renderLobby(overlay, {
-      onReady: () => {
-        activeGame.reset();
-        enterPlaying();
-      },
-      onCancel: backToGameList,
-    });
-    return;
-  }
-  activeGame.reset();
-  enterPlaying();
-}
-
-function showMenu() {
-  endGameSession();
-  if (activeGame && activeGame.save) activeGame.save();
-  activeGame = null;
-  setScreen("menu");
-  overlay.classList.remove("hidden");
-  threeCanvas.classList.add("hidden");
-  fxCanvas.classList.add("hidden");
-  renderMenu();
-}
-
-let normalGamesOrder = normalGames.slice();
-let topPlayedGameId = null;
-
-function renderNormalMenu() {
-  overlay.innerHTML = `
-    <h1>Normal Games</h1>
-    <button class="auth-toggle" type="button" data-action="back-to-hub">← Back</button>
-    <p>No camera needed — just your keyboard or mouse.</p>
-    <div class="game-grid">
-      ${normalGamesOrder
-        .map(
-          (g) => `
-        <button class="game-card" data-action="select-game" data-game-id="${g.id}">
-          ${g.thumbnail ? `<img class="card-thumb" src="${g.thumbnail}" alt="" />` : ""}
-          <div class="card-body">
-            <strong>${g.title}</strong>${g.id === topPlayedGameId ? ` <span class="badge-hot">🔥 Most Played</span>` : ""}
-            <span>${g.description}</span>
-          </div>
-        </button>`
-        )
-        .join("")}
-      ${webGames
-        .map(
-          (g) => `
-        <button class="game-card" data-action="open-web-game" data-web-id="${g.id}">
-          ${g.thumbnail ? `<img class="card-thumb" src="${g.thumbnail}" alt="" />` : ""}
-          <div class="card-body">
-            <strong>${escapeHtml(g.title)}</strong>
-            <span>${escapeHtml(g.description)}</span>
-          </div>
-        </button>`
-        )
-        .join("")}
-      ${appGames
-        .map(
-          (g) => `
-        <button class="game-card" data-action="open-app-game" data-app-id="${g.id}">
-          ${g.thumbnail ? `<img class="card-thumb" src="${g.thumbnail}" alt="" />` : ""}
-          <div class="card-body">
-            <strong>${escapeHtml(g.title)}</strong>
-            <span>${escapeHtml(g.description)}</span>
-          </div>
-        </button>`
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-// Ranks the Normal Games list by total play count (game_sessions rows per
-// game_id) so the most-played games surface first, same as any storefront's
-// "Popular" sort — matches this app's soft-fail convention for analytics
-// (see beginGameSession): if the query fails, the list just keeps its
-// existing order rather than showing an error.
-async function refreshNormalGamesRanking() {
-  try {
-    const counts = await Promise.all(
-      normalGames.map(async (g) => {
-        const { count } = await supabase
-          .from("game_sessions")
-          .select("*", { count: "exact", head: true })
-          .eq("game_id", g.id);
-        return count || 0;
-      })
-    );
-    const ranked = normalGames
-      .map((g, i) => ({ g, i, count: counts[i] }))
-      .sort((a, b) => b.count - a.count || a.i - b.i);
-    normalGamesOrder = ranked.map((r) => r.g);
-    topPlayedGameId = ranked[0] && ranked[0].count > 0 ? ranked[0].g.id : null;
-    if (screen === "normalMenu") renderNormalMenu();
-  } catch (err) {
-    console.warn("Could not load game popularity ranking.", err);
-  }
-}
-
-function showNormalMenu() {
-  endGameSession();
-  if (activeGame && activeGame.save) activeGame.save();
-  activeGame = null;
-  setScreen("normalMenu");
-  overlay.classList.remove("hidden");
-  threeCanvas.classList.add("hidden");
-  fxCanvas.classList.add("hidden");
-  renderNormalMenu();
-  refreshNormalGamesRanking();
-}
-
-function backToGameList() {
-  const wasCameraGame = activeGame && games.includes(activeGame);
-  if (wasCameraGame) {
-    showMenu();
-  } else {
-    showNormalMenu();
-  }
-}
-
-function togglePause() {
-  if (screen === "playing") {
-    setScreen("paused");
-    overlay.classList.remove("hidden");
-    renderPauseMenu();
-  } else if (screen === "paused") {
-    setScreen("playing");
-    overlay.classList.add("hidden");
-  }
-}
-
 overlay.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-action]");
   if (!btn) return;
@@ -950,62 +343,12 @@ overlay.addEventListener("click", (e) => {
       currentUser = null;
       showAuth();
     });
-  } else if (action === "open-camera-games") {
-    startCameraGames();
-  } else if (action === "open-normal-games") {
-    openNormalGames();
   } else if (action === "open-web-game") {
     playWebGame(btn.dataset.webId);
   } else if (action === "open-app-game") {
     playAppGame(btn.dataset.appId);
   } else if (action === "back-to-hub") {
     exitToHub();
-  } else if (action === "select-game") {
-    startGame(btn.dataset.gameId);
-  } else if (action === "resume") {
-    togglePause();
-  } else if (action === "quit") {
-    backToGameList();
-  } else if (action === "retry") {
-    startGame(activeGame.id);
-  } else if (action === "shop") {
-    activeGame.renderShop(overlay, {
-      onClose: () => renderGameOver(activeGame.getOverResult()),
-    });
-  } else if (action === "upgrade") {
-    if (activeGame.applyUpgrade(btn.dataset.upgradeId)) {
-      renderPauseMenu();
-    }
-  } else if (action === "reset-progress") {
-    renderResetConfirm();
-  } else if (action === "confirm-reset") {
-    const fighter = games.find((g) => g.id === "fighter");
-    if (fighter && fighter.resetProgress) fighter.resetProgress();
-    showMenu();
-  } else if (action === "cancel-reset") {
-    if (screen === "paused") {
-      renderPauseMenu();
-    } else {
-      renderMenu();
-    }
-  } else if (action === "test-sound") {
-    const fighter = games.find((g) => g.id === "fighter");
-    const statusEl = document.getElementById("soundStatus");
-    if (fighter && fighter.testSound && statusEl) {
-      statusEl.style.color = "#94a3b8";
-      statusEl.textContent = "Testing...";
-      fighter.testSound((ok, msg) => {
-        statusEl.textContent = (ok ? "✅ " : "❌ ") + msg;
-        statusEl.style.color = ok ? "#4ade80" : "#ef4444";
-      });
-    }
-  }
-});
-
-pauseBtn.addEventListener("click", togglePause);
-window.addEventListener("keydown", (e) => {
-  if (e.key === "p" || e.key === "P" || e.key === "Escape") {
-    if (screen === "playing" || screen === "paused") togglePause();
   }
 });
 
