@@ -578,16 +578,16 @@ export function createEmberAnteGame() {
       <div class="ember-sidebar">
         <div class="ember-stat-box">
           <span class="ember-stat-label">Round Score</span>
-          <span class="ember-stat-value">${run.roundScore}</span>
+          <span class="ember-stat-value gold">${run.roundScore}</span>
         </div>
         <div class="ember-stat-row">
-          <div class="ember-stat-box small"><span class="ember-stat-label">Hands</span><span class="ember-stat-value">${run.handsLeft}</span></div>
-          <div class="ember-stat-box small"><span class="ember-stat-label">Discards</span><span class="ember-stat-value">${run.discardsLeft}</span></div>
+          <div class="ember-stat-box small"><span class="ember-stat-label">Hands</span><span class="ember-stat-value blue">${run.handsLeft}</span></div>
+          <div class="ember-stat-box small"><span class="ember-stat-label">Discards</span><span class="ember-stat-value rose">${run.discardsLeft}</span></div>
         </div>
-        <div class="ember-stat-box"><span class="ember-stat-label">Coins</span><span class="ember-stat-value">🪙 ${run.coins}</span></div>
+        <div class="ember-stat-box"><span class="ember-stat-label">Coins</span><span class="ember-stat-value gold">🪙 ${run.coins}</span></div>
         <div class="ember-stat-row">
-          <div class="ember-stat-box small"><span class="ember-stat-label">Ante</span><span class="ember-stat-value">${run.ante}/${FINAL_ANTE}</span></div>
-          <div class="ember-stat-box small"><span class="ember-stat-label">Round</span><span class="ember-stat-value">${run.round}/3</span></div>
+          <div class="ember-stat-box small"><span class="ember-stat-label">Ante</span><span class="ember-stat-value violet">${run.ante}/${FINAL_ANTE}</span></div>
+          <div class="ember-stat-box small"><span class="ember-stat-label">Round</span><span class="ember-stat-value teal">${run.round}/3</span></div>
         </div>
         ${extraStat || ""}
         <button class="secondary" data-ember-action="exit-to-menu">← Quit Run</button>
@@ -801,6 +801,7 @@ export function createEmberAnteGame() {
 
   function mount(container, { onExit }) {
     root = container;
+    root.classList.add("ember-theme");
     save = loadSave();
 
     function handleClick(e) {
@@ -841,6 +842,7 @@ export function createEmberAnteGame() {
 
     return function unmount() {
       root.removeEventListener("click", handleClick);
+      root.classList.remove("ember-theme");
       root = null;
     };
   }

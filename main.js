@@ -1,6 +1,6 @@
 import { signUp, signIn, signOut, getCurrentUser, fetchCountry, supabase } from "./auth.js?v=1";
 import { TURNSTILE_SITE_KEY, SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=1";
-import { createEmberAnteGame } from "./emberAnte.js?v=5";
+import { createEmberAnteGame } from "./emberAnte.js?v=6";
 
 const overlay = document.getElementById("overlay");
 const errorBanner = document.getElementById("errorBanner");

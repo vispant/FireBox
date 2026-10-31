@@ -331,6 +331,38 @@ html, body {
   background: radial-gradient(ellipse at 50% 15%, #14295f 0%, #0b1a45 52%, #060d26 100%);
 }
 
+/* Ember Ante gets its own warm red/ember background instead of FireBox's
+   blue menu backdrop -- fits the theme, and scattered glowing dots slowly
+   drift to feel like embers rising. Toggled on #overlay by emberAnte.js's
+   mount()/unmount(), so it only applies while that game is active. */
+#overlay.solid.ember-theme {
+  background: radial-gradient(circle at 18% 22%, rgba(255, 150, 70, 0.22) 0, transparent 3px),
+    radial-gradient(circle at 82% 14%, rgba(255, 110, 50, 0.2) 0, transparent 2.5px),
+    radial-gradient(circle at 62% 72%, rgba(255, 170, 90, 0.18) 0, transparent 3px),
+    radial-gradient(circle at 28% 82%, rgba(255, 120, 55, 0.16) 0, transparent 2.5px),
+    radial-gradient(circle at 90% 58%, rgba(255, 140, 70, 0.15) 0, transparent 2.5px),
+    radial-gradient(circle at 8% 60%, rgba(255, 130, 60, 0.14) 0, transparent 2px),
+    radial-gradient(circle at 45% 40%, rgba(255, 160, 80, 0.13) 0, transparent 2px),
+    radial-gradient(ellipse at 50% 28%, #5a1a0c 0%, #3a1008 38%, #220905 68%, #0d0302 100%);
+  background-size: 140% 140%, 140% 140%, 140% 140%, 140% 140%, 140% 140%, 140% 140%, 140% 140%, 100% 100%;
+  animation: emberDrift 24s ease-in-out infinite alternate;
+}
+
+@keyframes emberDrift {
+  from {
+    background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, center;
+  }
+  to {
+    background-position: 14px -26px, -18px -20px, 10px -30px, -12px -22px, 16px -18px, -14px -24px, 8px -20px, center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #overlay.solid.ember-theme {
+    animation: none;
+  }
+}
+
 /* Shown only if the game loop throws, so a real error is diagnosable from a
    screenshot alone -- no DevTools access needed (which may be locked down
    on a managed device anyway). */
@@ -606,8 +638,8 @@ html, body {
   gap: 2px;
   padding: 8px 12px;
   border-radius: 10px;
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: rgba(30, 20, 20, 0.82);
+  border: 1px solid rgba(251, 146, 60, 0.3);
 }
 
 .ember-stat-row {
@@ -634,6 +666,26 @@ html, body {
   color: #fbbf24;
   display: inline-block;
   animation: emberStatPop 0.25s ease;
+}
+
+.ember-stat-value.gold {
+  color: #fbbf24;
+}
+
+.ember-stat-value.blue {
+  color: #60a5fa;
+}
+
+.ember-stat-value.rose {
+  color: #fb7185;
+}
+
+.ember-stat-value.violet {
+  color: #c084fc;
+}
+
+.ember-stat-value.teal {
+  color: #2dd4bf;
 }
 
 @keyframes emberStatPop {
