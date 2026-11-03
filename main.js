@@ -12,6 +12,7 @@ import { TURNSTILE_SITE_KEY, SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js
 import { enableSupersampling } from "./renderScale.js?v=1";
 import { createPostProcessor } from "./shaderPost.js?v=4";
 import { createEmberAnteGame } from "./emberAnte.js?v=6";
+import { createBlasterRushGame } from "./blasterGame.js?v=1";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -107,6 +108,7 @@ function wireBgSelect() {
 
 let screen = "loading"; // loading | auth | hub | menu | lobby | playing | paused | gameover
 let activeGame = null;
+let activeGameCategory = "camera"; // "camera" | "normal" -- which picker screen to return to
 let currentUser = null;
 let turnstileWidgetId = null;
 let modelsReady = false;
@@ -140,6 +142,11 @@ const games = [
 function getPlayerName() {
   return currentUser?.user_metadata?.name || currentUser?.email || "Guest";
 }
+
+// Normal games (keyboard/mouse, no camera) -- use the exact same shared
+// canvas reset/update/draw loop as the camera games above; predictFrame()
+// only touches the camera-specific branches when a game asks for them.
+const normalGames = [createBlasterRushGame({ canvas, ctx })];
 
 // Full standalone web apps (built elsewhere, e.g. Google AI Studio) that run
 // via <iframe> instead of any in-repo game code.
@@ -462,6 +469,12 @@ function renderHub() {
           <span>Motion-tracking games that use your webcam. We'll only ask for camera access once you open this.</span>
         </div>
       </button>
+      <button class="game-card" data-action="open-normal-games">
+        <div class="card-body">
+          <strong>🎮 Normal Games</strong>
+          <span>Keyboard, mouse, or touch -- no camera needed.</span>
+        </div>
+      </button>
       ${webGames
         .map(
           (g) => `
@@ -586,6 +599,38 @@ async function startCameraGames() {
     console.error(err);
     overlay.innerHTML = `<h1>Camera Games</h1><p>Could not start camera or model: ${err.message} (check camera permissions, that no other app is using the camera, and that you're on http://localhost or https).</p><button class="secondary" data-action="back-to-hub">Back</button>`;
   }
+}
+
+// Normal games never need the camera/pose model, so this just starts the
+// shared render loop directly and shows the picker -- no permission prompt,
+// no loading screen.
+function startNormalGames() {
+  ensurePredictLoop();
+  setScreen("menu");
+  overlay.classList.remove("hidden");
+  renderNormalMenu();
+}
+
+function renderNormalMenu() {
+  overlay.innerHTML = `
+    <h1>Normal Games</h1>
+    <button class="auth-toggle" type="button" data-action="back-to-hub">← Back</button>
+    <p>Pick a game. Works with keyboard, mouse, or touch.</p>
+    <div class="game-grid">
+      ${normalGames
+        .map(
+          (g) => `
+        <button class="game-card" data-action="select-game" data-game-id="${g.id}">
+          ${g.thumbnail ? `<img class="card-thumb" src="${g.thumbnail}" alt="" />` : ""}
+          <div class="card-body">
+            <strong>${g.title}</strong>
+            <span>${g.description}</span>
+          </div>
+        </button>`
+        )
+        .join("")}
+    </div>
+  `;
 }
 
 function exitToHub() {
@@ -788,7 +833,9 @@ function enterPlaying() {
 }
 
 function startGame(gameId) {
-  activeGame = games.find((g) => g.id === gameId);
+  const normalMatch = normalGames.find((g) => g.id === gameId);
+  activeGame = normalMatch || games.find((g) => g.id === gameId);
+  activeGameCategory = normalMatch ? "normal" : "camera";
   if (!activeGame) return;
   if (activeGame.primeAudio) activeGame.primeAudio();
   if (activeGame.needsLobby) {
@@ -815,7 +862,11 @@ function showMenu() {
   overlay.classList.remove("hidden");
   threeCanvas.classList.add("hidden");
   fxCanvas.classList.add("hidden");
-  renderMenu();
+  if (activeGameCategory === "normal") {
+    renderNormalMenu();
+  } else {
+    renderMenu();
+  }
 }
 
 function togglePause() {
@@ -845,6 +896,8 @@ overlay.addEventListener("click", (e) => {
     });
   } else if (action === "open-camera-games") {
     startCameraGames();
+  } else if (action === "open-normal-games") {
+    startNormalGames();
   } else if (action === "open-web-game") {
     playWebGame(btn.dataset.webId);
   } else if (action === "open-app-game") {
