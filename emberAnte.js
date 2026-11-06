@@ -423,8 +423,26 @@ export function createEmberAnteGame() {
     if (playBtn) playBtn.disabled = !run.selected.length;
   }
 
+  // True while a play/discard's card animation is still running, so a
+  // second click can't fire the same hand twice or interrupt the reveal.
+  let handResolving = false;
+
   function playHand() {
-    if (!run.selected.length) return;
+    if (!run.selected.length || handResolving) return;
+    handResolving = true;
+    const selectedIds = new Set(run.selected);
+    root.querySelectorAll(".playing-card").forEach((btn) => {
+      if (selectedIds.has(btn.dataset.id)) btn.classList.add("playing");
+    });
+    const playBtn = root.querySelector('[data-ember-action="play-hand"]');
+    const discardBtn = root.querySelector('[data-ember-action="discard-hand"]');
+    if (playBtn) playBtn.disabled = true;
+    if (discardBtn) discardBtn.disabled = true;
+    setTimeout(resolvePlayHand, 380);
+  }
+
+  function resolvePlayHand() {
+    handResolving = false;
     const playedCards = run.hand.filter((c) => run.selected.includes(c.id));
     const result = computeScore(run, playedCards);
     run.hand = run.hand.filter((c) => !run.selected.includes(c.id));
@@ -465,7 +483,21 @@ export function createEmberAnteGame() {
   }
 
   function discardHand() {
-    if (!run.selected.length || run.discardsLeft <= 0) return;
+    if (!run.selected.length || run.discardsLeft <= 0 || handResolving) return;
+    handResolving = true;
+    const selectedIds = new Set(run.selected);
+    root.querySelectorAll(".playing-card").forEach((btn) => {
+      if (selectedIds.has(btn.dataset.id)) btn.classList.add("discarding");
+    });
+    const playBtn = root.querySelector('[data-ember-action="play-hand"]');
+    const discardBtn = root.querySelector('[data-ember-action="discard-hand"]');
+    if (playBtn) playBtn.disabled = true;
+    if (discardBtn) discardBtn.disabled = true;
+    setTimeout(resolveDiscardHand, 340);
+  }
+
+  function resolveDiscardHand() {
+    handResolving = false;
     const discarded = run.hand.filter((c) => run.selected.includes(c.id));
     run.hand = run.hand.filter((c) => !run.selected.includes(c.id));
     run.discardPile.push(...discarded);
@@ -664,12 +696,47 @@ export function createEmberAnteGame() {
         <div class="result-card ${cleared ? "is-best" : ""}">
           <span class="result-icon">${cleared ? "🏆" : savedBySecondChance ? "🕊️" : "🔥"}</span>
           <h1>${result.name}</h1>
-          <p>${result.chips} chips × ${result.mult} mult = ${result.total} points</p>
-          ${cleared ? `<p>Round cleared! +${coinsEarned} coins</p>` : ""}
-          ${savedBySecondChance ? `<p>Second Chance saved your run — +1 hand</p>` : ""}
+          <p class="score-breakdown">
+            <span class="reveal-part" style="animation-delay:0.1s">${result.chips} chips</span>
+            <span class="reveal-part op" style="animation-delay:0.22s">×</span>
+            <span class="reveal-part" style="animation-delay:0.3s">${result.mult} mult</span>
+            <span class="reveal-part op" style="animation-delay:0.42s">=</span>
+            <span class="reveal-part total" style="animation-delay:0.5s" data-count-to="${result.total}">0</span>
+          </p>
+          ${cleared ? `<p class="reveal-part" style="animation-delay:0.95s">Round cleared! +${coinsEarned} coins</p>` : ""}
+          ${savedBySecondChance ? `<p class="reveal-part" style="animation-delay:0.95s">Second Chance saved your run — +1 hand</p>` : ""}
         </div>
-        <button data-ember-action="${cleared ? "continue-shop" : "continue-playing"}">Continue →</button>
+        <button class="reveal-part" style="animation-delay:1.05s" data-ember-action="${cleared ? "continue-shop" : "continue-playing"}">Continue →</button>
       </div>`;
+    animateCountUp(root.querySelector(".score-breakdown .total"), 500);
+  }
+
+  // Counts a number up from 0 to its target instead of just printing it,
+  // starting `delayMs` after render so it lands right as the score-breakdown
+  // row's staggered reveal reaches it. Respects prefers-reduced-motion
+  // (the CSS stagger above already does, via the reveal-part rules).
+  function animateCountUp(el, delayMs) {
+    if (!el) return;
+    const target = Number(el.dataset.countTo) || 0;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      el.textContent = target;
+      return;
+    }
+    setTimeout(() => {
+      const duration = 450;
+      const start = performance.now();
+      function tick(now) {
+        const t = Math.min(1, (now - start) / duration);
+        const eased = 1 - Math.pow(1 - t, 3);
+        el.textContent = Math.round(target * eased);
+        if (t < 1) requestAnimationFrame(tick);
+        else {
+          el.textContent = target;
+          el.classList.add("counted");
+        }
+      }
+      requestAnimationFrame(tick);
+    }, delayMs);
   }
 
   function enterShop() {

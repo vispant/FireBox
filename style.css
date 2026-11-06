@@ -405,6 +405,60 @@ canvas {
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
   max-width: 420px;
+  animation: popIn 0.4s cubic-bezier(0.16, 0.84, 0.44, 1) both;
+}
+
+/* Round-result score breakdown: chips, mult and total reveal one at a time
+   instead of appearing all at once, with the total counting up from 0 (see
+   animateCountUp() in emberAnte.js) for a bit of payoff on the number that
+   actually matters. */
+.score-breakdown {
+  margin: 2px 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: #cbd5e1;
+}
+
+@keyframes revealPartIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reveal-part {
+  animation: revealPartIn 0.3s ease backwards;
+}
+
+.score-breakdown .reveal-part.op {
+  color: #64748b;
+}
+
+.score-breakdown .reveal-part.total {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: #fbbf24;
+}
+
+.score-breakdown .reveal-part.total.counted {
+  animation: emberStatPop 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .result-card {
+    animation: none;
+  }
+  .reveal-part,
+  .score-breakdown .reveal-part.total.counted {
+    animation: none;
+  }
 }
 
 #overlay .result-card.is-best {
@@ -676,6 +730,52 @@ canvas {
   opacity: 0.45;
   cursor: default;
   transform: none;
+}
+
+/* Playing or discarding a hand used to just vanish the cards instantly when
+   the screen re-rendered a moment later -- these give the action a half-
+   second of visible follow-through first (see playHand()/discardHand() in
+   emberAnte.js, which add the class then delay the actual state change). */
+@keyframes cardPlay {
+  0% {
+    transform: translateY(-14px) scale(1);
+  }
+  45% {
+    transform: translateY(-34px) scale(1.1);
+    box-shadow: 0 14px 26px rgba(251, 191, 36, 0.45);
+  }
+  100% {
+    transform: translateY(-54px) scale(0.85);
+    opacity: 0;
+  }
+}
+
+#overlay .playing-card.playing {
+  animation: cardPlay 0.4s ease forwards;
+  pointer-events: none;
+}
+
+@keyframes cardDiscard {
+  0% {
+    transform: translateY(-14px) rotate(0deg);
+  }
+  100% {
+    transform: translateY(40px) rotate(-14deg);
+    opacity: 0;
+  }
+}
+
+#overlay .playing-card.discarding {
+  animation: cardDiscard 0.38s ease-in forwards;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #overlay .playing-card.playing,
+  #overlay .playing-card.discarding {
+    animation: none;
+    opacity: 0.3;
+  }
 }
 
 .ember-actions {
