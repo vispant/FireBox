@@ -6,6 +6,19 @@
 <title>FireBox</title>
 <link rel="stylesheet" href="style.css?v=34" />
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<!-- Three.js's examples/jsm addon modules (used by novaStrike.js for bloom
+     post-processing) import the bare specifier "three" internally, which
+     only resolves via an import map -- without this, any page that loads
+     those addons fails to even parse main.js. Must stay pinned to the exact
+     same three@ version novaStrike.js imports directly, or Three.js will
+     throw about mismatched/duplicate instances. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js"
+  }
+}
+</script>
 </head>
 <body>
   <div id="app">
@@ -32,6 +45,6 @@
     <div id="errorBanner" class="hidden"></div>
   </div>
 
-  <script type="module" src="main.js?v=125"></script>
+  <script type="module" src="main.js?v=126"></script>
 </body>
 </html>

@@ -13,6 +13,7 @@ import { enableSupersampling } from "./renderScale.js?v=1";
 import { createPostProcessor } from "./shaderPost.js?v=4";
 import { createEmberAnteGame } from "./emberAnte.js?v=6";
 import { createBlasterRushGame } from "./blasterGame.js?v=1";
+import { createNovaStrikeGame } from "./novaStrike.js?v=1";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -146,7 +147,10 @@ function getPlayerName() {
 // Normal games (keyboard/mouse, no camera) -- use the exact same shared
 // canvas reset/update/draw loop as the camera games above; predictFrame()
 // only touches the camera-specific branches when a game asks for them.
-const normalGames = [createBlasterRushGame({ canvas, ctx })];
+const normalGames = [
+  createBlasterRushGame({ canvas, ctx }),
+  createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }),
+];
 
 // Full standalone web apps (built elsewhere, e.g. Google AI Studio) that run
 // via <iframe> instead of any in-repo game code.
@@ -603,8 +607,15 @@ async function startCameraGames() {
 
 // Normal games never need the camera/pose model, so this just starts the
 // shared render loop directly and shows the picker -- no permission prompt,
-// no loading screen.
+// no loading screen. Camera games get their canvas's logical resolution set
+// from the live video feed (see setupCamera()); normal games have no video,
+// so without this the canvas would stay at the browser's default 300x150
+// backing size (just CSS-stretched, soft) for the whole session -- set it
+// from the viewport instead, same aspect-matching math the camera uses.
 function startNormalGames() {
+  const res = computeViewportResolution();
+  canvas.width = res.width;
+  canvas.height = res.height;
   ensurePredictLoop();
   setScreen("menu");
   overlay.classList.remove("hidden");
