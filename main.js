@@ -11,7 +11,7 @@ import { signUp, signIn, signOut, getCurrentUser, fetchCountry, supabase } from 
 import { TURNSTILE_SITE_KEY, SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=1";
 import { enableSupersampling } from "./renderScale.js?v=1";
 import { createPostProcessor } from "./shaderPost.js?v=4";
-import { createEmberAnteGame } from "./emberAnte.js?v=6";
+import { createEmberAnteGame } from "./emberAnte.js?v=7";
 import { createBlasterRushGame } from "./blasterGame.js?v=1";
 import { createNovaStrikeGame } from "./novaStrike.js?v=2";
 

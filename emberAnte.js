@@ -393,7 +393,34 @@ export function createEmberAnteGame() {
     const pos = run.selected.indexOf(id);
     if (pos >= 0) run.selected.splice(pos, 1);
     else if (run.selected.length < 5) run.selected.push(id);
-    renderPlaying();
+    updateHandSelectionUI();
+  }
+
+  // Toggling a card's selection doesn't change which cards are in the hand
+  // or any sidebar stat -- only the clicked card's selected state, the score
+  // preview, and the two action buttons' disabled state actually change.
+  // renderPlaying()'s full innerHTML replace was being called here too,
+  // which destroys and recreates every card button; since `.playing-card`
+  // has `animation: cardDeal ... backwards` in CSS tied to element creation,
+  // that replayed the whole hand's staggered deal-in animation as a visible
+  // blink on every single click. Patch just the parts that changed instead.
+  function updateHandSelectionUI() {
+    if (!root) return;
+    root.querySelectorAll(".playing-card").forEach((btn) => {
+      btn.classList.toggle("selected", run.selected.includes(btn.dataset.id));
+    });
+    const selectedCards = run.hand.filter((c) => run.selected.includes(c.id));
+    const preview = selectedCards.length ? computeScore(run, selectedCards) : null;
+    const previewEl = root.querySelector(".ember-preview");
+    if (previewEl) {
+      previewEl.innerHTML = preview
+        ? `${preview.name} — ${preview.chips} chips × ${preview.mult} mult = <strong>${preview.total}</strong>`
+        : "Select up to 5 cards";
+    }
+    const discardBtn = root.querySelector('[data-ember-action="discard-hand"]');
+    if (discardBtn) discardBtn.disabled = !run.selected.length || !run.discardsLeft;
+    const playBtn = root.querySelector('[data-ember-action="play-hand"]');
+    if (playBtn) playBtn.disabled = !run.selected.length;
   }
 
   function playHand() {
