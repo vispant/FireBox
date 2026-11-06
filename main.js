@@ -13,7 +13,7 @@ import { enableSupersampling } from "./renderScale.js?v=1";
 import { createPostProcessor } from "./shaderPost.js?v=4";
 import { createEmberAnteGame } from "./emberAnte.js?v=6";
 import { createBlasterRushGame } from "./blasterGame.js?v=1";
-import { createNovaStrikeGame } from "./novaStrike.js?v=1";
+import { createNovaStrikeGame } from "./novaStrike.js?v=2";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");

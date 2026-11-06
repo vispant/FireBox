@@ -36,10 +36,22 @@ const MOUSE_SENSITIVITY = 0.0022;
 const TOUCH_LOOK_SENSITIVITY = 0.0052;
 const PITCH_LIMIT = Math.PI / 2 - 0.05;
 
+const ENEMY_BOLT_SPEED = 10.5;
+const ENEMY_BOLT_RADIUS = 0.42;
+
 const ENEMY_TYPES = {
-  drone: { radius: 0.45, hp: 1, speed: 3.3, points: 10, coinChance: 0.5, color: 0x38bdf8, eye: 0xe0f7ff, hoverSpeed: 3.4 },
-  sentry: { radius: 0.62, hp: 2, speed: 2.3, points: 20, coinChance: 0.6, color: 0xfbbf24, eye: 0xfff3d6, hoverSpeed: 2.1 },
-  titan: { radius: 0.95, hp: 4, speed: 1.35, points: 40, coinChance: 0.9, color: 0xa855f7, eye: 0xf3e8ff, hoverSpeed: 1.4 },
+  // Rushes straight at the player, melee-only -- fast and fragile.
+  drone: { radius: 0.45, hp: 1, speed: 3.3, points: 10, coinChance: 0.5, color: 0x38bdf8, eye: 0xe0f7ff, hoverSpeed: 3.4, ranged: false },
+  // Keeps its distance and snipes once in range, backing off if the player closes in.
+  sentry: {
+    radius: 0.62, hp: 2, speed: 2.5, points: 20, coinChance: 0.6, color: 0xfbbf24, eye: 0xfff3d6, hoverSpeed: 2.1,
+    ranged: true, attackRange: 15, attackCooldown: 1.7, boltColor: 0xfbbf24,
+  },
+  // Slow and tanky, hangs back further and hits harder on a longer cooldown.
+  titan: {
+    radius: 0.95, hp: 4, speed: 1.35, points: 40, coinChance: 0.9, color: 0xa855f7, eye: 0xf3e8ff, hoverSpeed: 1.4,
+    ranged: true, attackRange: 12, attackCooldown: 2.3, boltColor: 0xc084fc,
+  },
 };
 
 function loadSaveData() {
@@ -119,16 +131,57 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
     }
   }
 
+  // A sprinkle of distant unlit points around the whole scene -- cheap (one
+  // draw call) but does more for "this feels like a real place" than almost
+  // anything else here, since the arena alone reads as a small lit island in
+  // a flat void without it.
+  function buildStarfield() {
+    const STAR_COUNT = 900;
+    const positions = new Float32Array(STAR_COUNT * 3);
+    for (let i = 0; i < STAR_COUNT; i++) {
+      const r = rand(60, 140);
+      const theta = rand(0, Math.PI * 2);
+      const phi = Math.acos(rand(-1, 0.15)); // bias above the horizon
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = Math.abs(r * Math.cos(phi)) + 4;
+      positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({ color: 0xbfe3ff, size: 0.55, sizeAttenuation: true, transparent: true, opacity: 0.85, fog: false });
+    return new THREE.Points(geo, mat);
+  }
+
   function buildArena() {
     const group = new THREE.Group();
 
     const floor = new THREE.Mesh(
       new THREE.CircleGeometry(ARENA_RADIUS, 48),
-      new THREE.MeshStandardMaterial({ color: 0x0c1322, metalness: 0.35, roughness: 0.6 })
+      new THREE.MeshStandardMaterial({ color: 0x0c1322, metalness: 0.45, roughness: 0.5 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     group.add(floor);
+
+    // Center landing-pad glow: a soft radial gradient disc the player starts
+    // standing on, giving the arena a focal point instead of a flat void.
+    const padCanvas = document.createElement("canvas");
+    padCanvas.width = padCanvas.height = 128;
+    const padCtx = padCanvas.getContext("2d");
+    const grad = padCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, "rgba(94, 234, 212, 0.55)");
+    grad.addColorStop(0.7, "rgba(14, 165, 201, 0.18)");
+    grad.addColorStop(1, "rgba(14, 165, 201, 0)");
+    padCtx.fillStyle = grad;
+    padCtx.fillRect(0, 0, 128, 128);
+    const padTex = new THREE.CanvasTexture(padCanvas);
+    const pad = new THREE.Mesh(
+      new THREE.CircleGeometry(6.5, 32),
+      new THREE.MeshBasicMaterial({ map: padTex, transparent: true, depthWrite: false })
+    );
+    pad.rotation.x = -Math.PI / 2;
+    pad.position.y = 0.015;
+    group.add(pad);
 
     const ringGeo = new THREE.TorusGeometry(1, 0.025, 6, 24);
     const ringMat = new THREE.MeshStandardMaterial({ color: 0x0e7490, emissive: 0x0ea5c9, emissiveIntensity: 0.5, metalness: 0.3, roughness: 0.5 });
@@ -145,6 +198,8 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
     const pillarMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.5, roughness: 0.45 });
     const capGeo = new THREE.CylinderGeometry(0.46, 0.46, 0.18, 8);
     const capMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+    const beamGeo = new THREE.CylinderGeometry(0.05, 0.22, 7, 8, 1, true);
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
     for (let i = 0; i < pillarCount; i++) {
       const a = (Math.PI * 2 * i) / pillarCount;
       const px = Math.cos(a) * (ARENA_RADIUS + 1.6);
@@ -156,8 +211,14 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
       const cap = new THREE.Mesh(capGeo, capMat);
       cap.position.set(px, 3.5, pz);
       group.add(cap);
+      // Faint beacon beam rising off each pillar -- reads nicely through
+      // bloom without the overexposure problems a solid bright mesh had.
+      const beam = new THREE.Mesh(beamGeo, beamMat);
+      beam.position.set(px, 7.1, pz);
+      group.add(beam);
     }
 
+    group.add(buildStarfield());
     return group;
   }
 
@@ -165,16 +226,37 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
     const def = ENEMY_TYPES[type];
     const group = new THREE.Group();
     const bodyMat = new THREE.MeshStandardMaterial({ color: def.color, emissive: def.color, emissiveIntensity: 0.35, metalness: 0.4, roughness: 0.35 });
+    // Small bright accents (the eye) stay fully unlit -- they're tiny, so
+    // bloom reads them as a sharp punchy highlight. Larger accent surfaces
+    // (rings, halos, cores) use a modest emissive instead: at close range a
+    // big fullbright ring blooms into a screen-filling white halo instead
+    // of a glow, the same overexposure problem the floor rings and weapon
+    // stripe had.
     const eyeMat = new THREE.MeshBasicMaterial({ color: def.eye });
+    const accentMat = new THREE.MeshStandardMaterial({ color: def.color, emissive: def.eye, emissiveIntensity: 0.55, metalness: 0.3, roughness: 0.4 });
 
     let body;
     if (type === "drone") {
       body = new THREE.Mesh(new THREE.IcosahedronGeometry(def.radius, 0), bodyMat);
+      // A tilted halo ring, slowly spun in update() -- gives the smallest,
+      // plainest silhouette a bit of presence without adding real geometry cost.
+      const halo = new THREE.Mesh(new THREE.TorusGeometry(def.radius * 1.35, 0.03, 6, 20), accentMat);
+      halo.rotation.x = Math.PI / 2.4;
+      halo.name = "halo";
+      group.add(halo);
     } else if (type === "sentry") {
       body = new THREE.Mesh(new THREE.CylinderGeometry(def.radius * 0.8, def.radius, def.radius * 1.9, 8), bodyMat);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(def.radius * 0.95, 0.05, 6, 16), eyeMat);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(def.radius * 0.95, 0.05, 6, 16), accentMat);
       ring.rotation.x = Math.PI / 2;
       group.add(ring);
+      // A barrel pair up front -- it's a sniper now, it should look like one.
+      const barrelGeo = new THREE.CylinderGeometry(0.05, 0.05, def.radius * 1.1, 6);
+      for (const side of [-1, 1]) {
+        const barrel = new THREE.Mesh(barrelGeo, new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.6, roughness: 0.3 }));
+        barrel.rotation.x = Math.PI / 2;
+        barrel.position.set(side * def.radius * 0.35, 0, def.radius * 1.1);
+        group.add(barrel);
+      }
     } else {
       body = new THREE.Mesh(new THREE.BoxGeometry(def.radius * 1.7, def.radius * 1.7, def.radius * 1.7), bodyMat);
       const spikeGeo = new THREE.ConeGeometry(0.14, 0.4, 5);
@@ -185,6 +267,12 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
         spike.position.set(sx, def.radius * 0.6, sz);
         group.add(spike);
       }
+      // A core glowing through the hull -- reads as "heavily armed" and
+      // gives the biggest, slowest enemy a clear focal point. Kept well
+      // inside the box's inradius and on the dim accent material so it
+      // doesn't blow out into a solid white box at close range.
+      const core = new THREE.Mesh(new THREE.SphereGeometry(def.radius * 0.4, 12, 12), accentMat);
+      group.add(core);
     }
     body.castShadow = true;
     group.add(body);
@@ -199,23 +287,32 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
   }
 
   // ---- weapon view-model (child of the camera) ----
+  // Kept deliberately short and set further back from the camera than a
+  // first instinct suggests: the gun's long axis runs parallel to the
+  // camera's view axis but offset to the side, so at close range even a
+  // modestly-sized box reveals its long flank at a steep oblique angle and
+  // reads as a huge dark wedge dominating the corner of the screen.
+  // Shortening the body and pushing it back keeps that flank small.
   const weaponGroup = new THREE.Group();
-  const weaponMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.3 });
+  // High emissive on purpose: a view-model sits right in the camera's own
+  // shadow and shouldn't depend on scene lighting to read clearly, the same
+  // way a HUD element wouldn't.
+  const weaponMat = new THREE.MeshStandardMaterial({ color: 0x64748b, emissive: 0x475569, emissiveIntensity: 0.9, metalness: 0.4, roughness: 0.4 });
   const accentMat = new THREE.MeshStandardMaterial({ color: 0x0f766e, emissive: 0x2dd4bf, emissiveIntensity: 0.7, metalness: 0.2, roughness: 0.4 });
-  const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.38), weaponMat);
+  const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.09, 0.22), weaponMat);
   gunBody.position.set(0, 0, 0);
   weaponGroup.add(gunBody);
-  const gunBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.26, 8), weaponMat);
+  const gunBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.18, 8), weaponMat);
   gunBarrel.rotation.x = Math.PI / 2;
-  gunBarrel.position.set(0, 0.01, -0.3);
+  gunBarrel.position.set(0, 0.008, -0.18);
   weaponGroup.add(gunBarrel);
-  const gunStripe = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.018, 0.2), accentMat);
-  gunStripe.position.set(0, 0.062, 0.02);
+  const gunStripe = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.013, 0.13), accentMat);
+  gunStripe.position.set(0, 0.05, 0.02);
   weaponGroup.add(gunStripe);
   const muzzleTip = new THREE.Object3D();
-  muzzleTip.position.set(0, 0.01, -0.46);
+  muzzleTip.position.set(0, 0.008, -0.28);
   weaponGroup.add(muzzleTip);
-  weaponGroup.position.set(0.24, -0.2, -0.85);
+  weaponGroup.position.set(0.32, -0.28, -1.1);
   camera.add(weaponGroup);
   if (scene) scene.add(camera);
 
@@ -238,11 +335,18 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
     const rim = new THREE.PointLight(0x38bdf8, 0.6, 30);
     rim.position.set(0, 6, 0);
     scene.add(rim);
+    // A warm violet accent opposite the cool cyan rim light -- a single-hue
+    // scene reads flat under bloom; this gives shadows/edges a second color
+    // to pick up without touching the overall cyan sci-fi identity.
+    const accent = new THREE.PointLight(0xa855f7, 0.35, 26);
+    accent.position.set(-ARENA_RADIUS * 0.5, 4, -ARENA_RADIUS * 0.5);
+    scene.add(accent);
     scene.add(buildArena());
   }
 
   const tracers = []; // { mesh, life, max }
   const shards = []; // { mesh, vel, life, max }
+  const enemyBolts = []; // { mesh, vel, life }
   const enemyGroup = scene ? new THREE.Group() : null;
   if (scene) scene.add(enemyGroup);
 
@@ -264,6 +368,7 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
   let waveBanner = 0;
   let hitFlash = 0;
   let damageFlash = 0;
+  let hasTarget = false;
   let bobTime = 0;
   let gameOver = true;
   let locked = false;
@@ -366,7 +471,10 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
     mesh.position.set(Math.cos(a) * ARENA_RADIUS, mesh.userData.baseY, Math.sin(a) * ARENA_RADIUS);
     enemyGroup.add(mesh);
     const speedMult = 1 + Math.min(0.75, (wave - 1) * 0.06);
-    enemies.push({ type, mesh, hp: def.hp, speed: def.speed * speedMult, bob: rand(0, Math.PI * 2) });
+    // Stagger each ranged spawn's first shot instead of firing the instant
+    // it's in range, so a whole wave doesn't open fire in the same frame.
+    const attackCooldown = def.ranged ? rand(0.4, def.attackCooldown) : 0;
+    enemies.push({ type, mesh, hp: def.hp, speed: def.speed * speedMult, bob: rand(0, Math.PI * 2), attackCooldown });
   }
 
   function spawnShards(position, color, count) {
@@ -405,6 +513,26 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
     muzzleFlash.intensity = 3.2;
   }
 
+  // Enemy fire: a small glowing bolt (own light so it reads clearly even
+  // without bloom catching it) that travels toward the player's position at
+  // the moment it was fired -- no homing, so strafing out of its path works.
+  function fireEnemyBolt(enemy) {
+    const def = ENEMY_TYPES[enemy.type];
+    const from = enemy.mesh.position.clone();
+    from.y += 0.1;
+    const to = new THREE.Vector3(playerPos.x, PLAYER_EYE_HEIGHT, playerPos.z);
+    const dir = new THREE.Vector3().subVectors(to, from).normalize();
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.11, 8, 8),
+      new THREE.MeshBasicMaterial({ color: def.boltColor })
+    );
+    mesh.position.copy(from);
+    const light = new THREE.PointLight(def.boltColor, 1.4, 4);
+    mesh.add(light);
+    scene.add(mesh);
+    enemyBolts.push({ mesh, vel: dir.multiplyScalar(ENEMY_BOLT_SPEED), life: 3 });
+  }
+
   function reset() {
     yaw = 0;
     pitch = 0;
@@ -426,6 +554,8 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
     tracers.length = 0;
     for (const s of shards) scene.remove(s.mesh);
     shards.length = 0;
+    for (const b of enemyBolts) scene.remove(b.mesh);
+    enemyBolts.length = 0;
     fireCooldown = 0;
     score = 0;
     runCoins = 0;
@@ -435,6 +565,7 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
     waveBanner = 2;
     hitFlash = 0;
     damageFlash = 0;
+    hasTarget = false;
     bobTime = 0;
     gameOver = false;
     keys.forward = keys.back = keys.left = keys.right = false;
@@ -507,8 +638,8 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
 
     const moving = Math.hypot(velX, velZ) > 0.5;
     bobTime += dt * (moving ? 9 : 2.5);
-    weaponGroup.position.y = -0.2 + (moving ? Math.sin(bobTime) * 0.015 : 0);
-    weaponGroup.position.x = 0.24 + (moving ? Math.cos(bobTime * 0.5) * 0.008 : 0);
+    weaponGroup.position.y = -0.28 + (moving ? Math.sin(bobTime) * 0.015 : 0);
+    weaponGroup.position.x = 0.32 + (moving ? Math.cos(bobTime * 0.5) * 0.008 : 0);
 
     // ---- waves ----
     waveTimer += dt;
@@ -526,7 +657,7 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
       spawnEnemy();
     }
 
-    // ---- enemies move toward player, hover-bob ----
+    // ---- enemies move + attack, hover-bob ----
     const camForward = new THREE.Vector3();
     camera.getWorldDirection(camForward);
     for (const e of enemies) {
@@ -534,18 +665,68 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
       const dx = playerPos.x - e.mesh.position.x;
       const dz = playerPos.z - e.mesh.position.z;
       const d = Math.hypot(dx, dz) || 1;
-      e.mesh.position.x += (dx / d) * e.speed * dt;
-      e.mesh.position.z += (dz / d) * e.speed * dt;
+
+      if (def.ranged) {
+        // Hold at roughly two-thirds of attack range: close in if too far
+        // to ever get a shot, back off if the player pushes in close, so it
+        // reads as "keeping its distance" rather than walking into melee.
+        const preferred = def.attackRange * 0.65;
+        if (d > preferred + 1) {
+          e.mesh.position.x += (dx / d) * e.speed * dt;
+          e.mesh.position.z += (dz / d) * e.speed * dt;
+        } else if (d < preferred - 1.5) {
+          e.mesh.position.x -= (dx / d) * e.speed * 0.6 * dt;
+          e.mesh.position.z -= (dz / d) * e.speed * 0.6 * dt;
+        }
+        e.attackCooldown -= dt;
+        if (d <= def.attackRange && e.attackCooldown <= 0) {
+          fireEnemyBolt(e);
+          e.attackCooldown = def.attackCooldown;
+        }
+      } else {
+        e.mesh.position.x += (dx / d) * e.speed * dt;
+        e.mesh.position.z += (dz / d) * e.speed * dt;
+      }
+
       e.bob += dt * def.hoverSpeed;
       e.mesh.position.y = e.mesh.userData.baseY + Math.sin(e.bob) * 0.12;
       e.mesh.lookAt(playerPos.x, e.mesh.position.y, playerPos.z);
+      const halo = e.mesh.getObjectByName("halo");
+      if (halo) halo.rotation.z += dt * 2.2;
     }
 
-    // ---- auto-fire at nearest enemy within forward cone ----
-    fireCooldown -= dt;
-    if (fireCooldown <= 0 && enemies.length) {
+    // ---- enemy bolts: travel, hit the player, or expire ----
+    for (let i = enemyBolts.length - 1; i >= 0; i--) {
+      const b = enemyBolts[i];
+      b.mesh.position.addScaledVector(b.vel, dt);
+      b.life -= dt;
+      let gone = b.life <= 0;
+      if (!gone && invincibleTimer <= 0) {
+        const bdx = b.mesh.position.x - playerPos.x;
+        const bdz = b.mesh.position.z - playerPos.z;
+        const bdy = b.mesh.position.y - PLAYER_EYE_HEIGHT;
+        if (Math.hypot(bdx, bdy, bdz) < ENEMY_BOLT_RADIUS + PLAYER_RADIUS) {
+          lives -= 1;
+          invincibleTimer = INVINCIBLE_DURATION;
+          damageFlash = 0.4;
+          gone = true;
+          if (lives <= 0) endRun();
+        }
+      }
+      if (!gone && Math.hypot(b.mesh.position.x, b.mesh.position.z) > ARENA_RADIUS + 6) gone = true;
+      if (gone) {
+        scene.remove(b.mesh);
+        b.mesh.geometry.dispose();
+        b.mesh.material.dispose();
+        enemyBolts.splice(i, 1);
+      }
+    }
+
+    // ---- target acquisition: every frame regardless of cooldown, so the
+    // crosshair's lock indicator (see draw()) stays live between shots ----
+    let target = null;
+    if (enemies.length) {
       const coneCos = Math.cos(fireConeHalfAngle());
-      let best_ = null;
       let bestD = FIRE_RANGE;
       for (const e of enemies) {
         const toEnemy = new THREE.Vector3().subVectors(e.mesh.position, camera.position);
@@ -555,30 +736,34 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
         if (toEnemy.dot(camForward) < coneCos) continue;
         if (d < bestD) {
           bestD = d;
-          best_ = e;
+          target = e;
         }
       }
-      if (best_) {
-        const def = ENEMY_TYPES[best_.type];
-        const muzzleWorld = new THREE.Vector3();
-        muzzleTip.getWorldPosition(muzzleWorld);
-        fireTracer(muzzleWorld, best_.mesh.position);
-        best_.hp -= 1;
-        hitFlash = 0.15;
-        if (best_.hp <= 0) {
-          score += def.points;
-          spawnShards(best_.mesh.position, def.color, 9);
-          if (Math.random() < def.coinChance) runCoins += 1;
-          enemyGroup.remove(best_.mesh);
-          best_.mesh.traverse((c) => {
-            if (c.geometry) c.geometry.dispose();
-          });
-          enemies = enemies.filter((e) => e !== best_);
-        } else {
-          spawnShards(best_.mesh.position, def.color, 3);
-        }
-        fireCooldown = fireCooldownBase();
+    }
+    hasTarget = !!target;
+
+    // ---- auto-fire at the acquired target ----
+    fireCooldown -= dt;
+    if (fireCooldown <= 0 && target) {
+      const def = ENEMY_TYPES[target.type];
+      const muzzleWorld = new THREE.Vector3();
+      muzzleTip.getWorldPosition(muzzleWorld);
+      fireTracer(muzzleWorld, target.mesh.position);
+      target.hp -= 1;
+      hitFlash = 0.15;
+      if (target.hp <= 0) {
+        score += def.points;
+        spawnShards(target.mesh.position, def.color, 9);
+        if (Math.random() < def.coinChance) runCoins += 1;
+        enemyGroup.remove(target.mesh);
+        target.mesh.traverse((c) => {
+          if (c.geometry) c.geometry.dispose();
+        });
+        enemies = enemies.filter((e) => e !== target);
+      } else {
+        spawnShards(target.mesh.position, def.color, 3);
       }
+      fireCooldown = fireCooldownBase();
     }
 
     // ---- player-enemy collisions ----
@@ -692,22 +877,31 @@ export function createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }) {
       fxCtx.fillRect(0, 0, w, h);
     }
 
-    // crosshair
+    // Bracket-style reticle: pulls in tighter and turns teal when a target
+    // is acquired (see `hasTarget`, set every frame in update()), so the
+    // player gets a clear "you're about to hit something" signal that
+    // doubles as a bit of HUD polish over a plain static cross.
     const cx = w / 2;
     const cy = h / 2;
-    const size = hitFlash > 0 ? 14 : 10;
-    fxCtx.strokeStyle = hitFlash > 0 ? "#fde68a" : "rgba(224, 242, 254, 0.85)";
+    const locked = hasTarget && hitFlash <= 0;
+    const color = hitFlash > 0 ? "#fde68a" : locked ? "#5eead4" : "rgba(224, 242, 254, 0.8)";
+    const R = hitFlash > 0 ? 17 : locked ? 13 : 16;
+    const arm = 5;
+    fxCtx.strokeStyle = color;
     fxCtx.lineWidth = 2;
     fxCtx.beginPath();
-    fxCtx.moveTo(cx - size, cy);
-    fxCtx.lineTo(cx - 3, cy);
-    fxCtx.moveTo(cx + 3, cy);
-    fxCtx.lineTo(cx + size, cy);
-    fxCtx.moveTo(cx, cy - size);
-    fxCtx.lineTo(cx, cy - 3);
-    fxCtx.moveTo(cx, cy + 3);
-    fxCtx.lineTo(cx, cy + size);
+    for (const [dx, dy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const px = cx + dx * R;
+      const py = cy + dy * R;
+      fxCtx.moveTo(px, py - dy * arm);
+      fxCtx.lineTo(px, py);
+      fxCtx.lineTo(px - dx * arm, py);
+    }
     fxCtx.stroke();
+    fxCtx.beginPath();
+    fxCtx.arc(cx, cy, locked ? 2.6 : 1.8, 0, Math.PI * 2);
+    fxCtx.fillStyle = color;
+    fxCtx.fill();
 
     if (!gameOver && !isTouchDevice && document.pointerLockElement !== canvas) {
       fxCtx.fillStyle = "rgba(15, 23, 42, 0.6)";
