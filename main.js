@@ -14,6 +14,7 @@ import { createPostProcessor } from "./shaderPost.js?v=4";
 import { createEmberAnteGame } from "./emberAnte.js?v=8";
 import { createBlasterRushGame } from "./blasterGame.js?v=1";
 import { createNovaStrikeGame } from "./novaStrike.js?v=2";
+import { createUnderstoryGame } from "./understoryGame.js?v=1";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
@@ -150,6 +151,7 @@ function getPlayerName() {
 const normalGames = [
   createBlasterRushGame({ canvas, ctx }),
   createNovaStrikeGame({ canvas, threeCanvas, fxCanvas, fxCtx }),
+  createUnderstoryGame({ canvas, ctx }),
 ];
 
 // Full standalone web apps (built elsewhere, e.g. Google AI Studio) that run
