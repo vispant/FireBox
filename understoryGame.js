@@ -52,6 +52,13 @@ function aabbOverlap(a, b) {
 function circleOverlap(x1, y1, r1, x2, y2, r2) {
   return Math.hypot(x1 - x2, y1 - y2) < r1 + r2;
 }
+// Deterministic per-index "randomness" for background variation (tree shape,
+// size) that must look the same every frame -- real Math.random() would
+// make foliage flicker between different shapes each draw call.
+function seededRand(seed) {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
 
 function defaultSave() {
   return {
@@ -92,6 +99,38 @@ export function createUnderstoryGame({ canvas, ctx }) {
   let saveData = loadSave();
   const isTouchDevice = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || navigator.maxTouchPoints > 0;
 
+  // Pre-baked once (not per frame) grain texture for a subtle atmosphere
+  // overlay -- generating noise per pixel every frame would be a real cost,
+  // but a single small tile turned into a repeating pattern is free to draw.
+  let grainPattern = null;
+  (function buildGrainPattern() {
+    const size = 128;
+    const off = document.createElement("canvas");
+    off.width = size;
+    off.height = size;
+    const octx = off.getContext("2d");
+    const img = octx.createImageData(size, size);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = Math.floor(Math.random() * 255);
+      img.data[i] = v;
+      img.data[i + 1] = v;
+      img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+    octx.putImageData(img, 0, 0);
+    grainPattern = ctx.createPattern(off, "repeat");
+  })();
+  let vignetteCache = { w: 0, h: 0, gradient: null };
+  function getVignette() {
+    if (vignetteCache.w !== canvas.width || vignetteCache.h !== canvas.height) {
+      const g = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, canvas.height * 0.25, canvas.width / 2, canvas.height / 2, canvas.height * 0.78);
+      g.addColorStop(0, "rgba(0,0,0,0)");
+      g.addColorStop(1, "rgba(0,0,0,0.58)");
+      vignetteCache = { w: canvas.width, h: canvas.height, gradient: g };
+    }
+    return vignetteCache.gradient;
+  }
+
   let phase = "title";
   let gameOver = true; // mirrors other games' convention; true until reset() starts a session
   let prevKeysSnapshot = {};
@@ -119,6 +158,30 @@ export function createUnderstoryGame({ canvas, ctx }) {
   let cutscene = null; // set when phase enters "boss-defeat-cutscene"
   let retreatTimer = 0;
   let activeBossLine = null;
+
+  // ---------------- juice: hit-stop, screen shake, swing trail, flashes ----------------
+  let hitStopTimer = 0;
+  let shakeTime = 0;
+  let shakeDuration = 0.001; // avoid /0; real values set by triggerShake
+  let shakeMag = 0;
+  let frameShakeX = 0;
+  let frameShakeY = 0;
+  let meleeSwing = null; // { timer, duration, facing, originX, originY, reach }
+  let impactFlashes = []; // { x, y, r, life, max, color } -- localized "hit landed" flash
+  let bossDeathFlash = 0;
+  let ambientParticles = [];
+
+  function triggerHitStop(seconds) {
+    hitStopTimer = Math.max(hitStopTimer, seconds);
+  }
+  function triggerShake(mag, duration) {
+    shakeMag = Math.max(shakeMag, mag);
+    shakeTime = duration;
+    shakeDuration = duration;
+  }
+  function spawnImpactFlash(x, y, r, color) {
+    impactFlashes.push({ x, y, r, life: 0.18, max: 0.18, color });
+  }
 
   // ---------------- input ----------------
   function keyFor(code) {
@@ -223,6 +286,49 @@ export function createUnderstoryGame({ canvas, ctx }) {
     }
   }
 
+  // Ambient drifting motes/spores -- small, cheap (~20 on screen), continuous
+  // atmosphere independent of combat. A fixed pool recycled when a particle
+  // drifts off the current viewport, so it always reads as "always present
+  // near the player" without tracking the whole (much larger) zone.
+  const AMBIENT_COUNT = 20;
+  function makeAmbientParticle(firstSpawn) {
+    return {
+      x: camera.x + rand(-100, canvas.width + 100),
+      y: firstSpawn ? camera.y + rand(canvas.height * 0.1, canvas.height * 0.8) : camera.y + canvas.height + rand(0, 40),
+      phase: rand(0, Math.PI * 2),
+      speed: rand(6, 16),
+      size: rand(1.3, 2.8),
+      driftAmp: rand(10, 28),
+    };
+  }
+  function initAmbientParticles() {
+    ambientParticles = [];
+    for (let i = 0; i < AMBIENT_COUNT; i++) ambientParticles.push(makeAmbientParticle(true));
+  }
+  function updateAmbientParticles(dt) {
+    if (phase !== "explore" && phase !== "explore-tutorial" && phase !== "boss-fight") return;
+    for (const p of ambientParticles) {
+      p.phase += dt * 0.8;
+      p.y -= p.speed * dt;
+      if (p.y < camera.y - 40 || p.x < camera.x - 150 || p.x > camera.x + canvas.width + 150) {
+        Object.assign(p, makeAmbientParticle(false));
+      }
+    }
+  }
+  function drawAmbientParticles(zone) {
+    ctx.fillStyle = zone.palette.living;
+    for (const p of ambientParticles) {
+      const dx = Math.sin(p.phase) * p.driftAmp;
+      const [sx, sy] = worldToScreen(p.x + dx, p.y);
+      if (sx < -20 || sx > canvas.width + 20) continue;
+      ctx.globalAlpha = 0.3 + Math.sin(p.phase * 2) * 0.15;
+      ctx.beginPath();
+      ctx.arc(sx, sy, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   function enterZone(zoneId, spawnOverride) {
     const zone = ZONES[zoneId];
     currentZoneId = zoneId;
@@ -239,6 +345,9 @@ export function createUnderstoryGame({ canvas, ctx }) {
     player.y = sp.y;
     player.vx = 0;
     player.vy = 0;
+    camera.x = sp.x;
+    camera.y = sp.y;
+    initAmbientParticles();
     projectiles = [];
     bossFight = null;
     cutscene = null;
@@ -304,8 +413,14 @@ export function createUnderstoryGame({ canvas, ctx }) {
       player.hp = Math.max(1, player.hp - 1);
     }
 
-    camera.x = clamp(player.x + player.w / 2 - canvas.width / 2, 0, Math.max(0, zone.width - canvas.width));
-    camera.y = clamp(player.y - canvas.height * 0.55, 0, Math.max(0, zone.height - canvas.height));
+    // Lerp toward the clamped target instead of snapping straight to it --
+    // cheap, frame-rate-independent smoothing that makes movement (and
+    // especially screen-shake-era hits) read as less jittery.
+    const targetCamX = clamp(player.x + player.w / 2 - canvas.width / 2, 0, Math.max(0, zone.width - canvas.width));
+    const targetCamY = clamp(player.y - canvas.height * 0.55, 0, Math.max(0, zone.height - canvas.height));
+    const camLerp = Math.min(1, 10 * dt);
+    camera.x += (targetCamX - camera.x) * camLerp;
+    camera.y += (targetCamY - camera.y) * camLerp;
   }
 
   function playerHurtbox() {
@@ -316,6 +431,9 @@ export function createUnderstoryGame({ canvas, ctx }) {
     player.hp -= amount;
     player.invincibleTimer = 1.0;
     spawnParticles(player.x + player.w / 2, player.y + player.h / 2, "#f87171", 8, 100);
+    spawnImpactFlash(player.x + player.w / 2, player.y + player.h / 2, 50, "#f87171");
+    triggerHitStop(0.09);
+    triggerShake(13, 0.28);
   }
 
   // ---------------- flowers ----------------
@@ -362,6 +480,10 @@ export function createUnderstoryGame({ canvas, ctx }) {
       const reach = 42 + saveData.upgradeLevels.rootReach * 10;
       const hitbox = { x: player.facing > 0 ? player.x + player.w : player.x - reach, y: player.y - 6, w: reach, h: player.h + 12 };
       spawnParticles(player.x + player.w / 2 + player.facing * 20, player.y + player.h / 2, "#4ade80", 5, 70);
+      // A visible swing arc -- previously the melee attack had zero visual
+      // representation beyond particles appearing at whatever it hit, which
+      // never showed the player its own swing's shape or range.
+      meleeSwing = { timer: 0.14, duration: 0.14, facing: player.facing, reach };
       showConceptBanner(ATTACK_CONCEPTS.tendrilWhip);
       resolveMeleeHit(hitbox);
     }
@@ -390,17 +512,22 @@ export function createUnderstoryGame({ canvas, ctx }) {
     }
   }
 
+  function killEnemy(e) {
+    e.dying = true;
+    e.dyingTimer = 0.22;
+    saveData.biomass += 5;
+  }
+
   function resolveMeleeHit(hitbox) {
     for (const e of zoneRuntime.enemies) {
-      if (!e.alive || e.hitCooldown > 0) continue;
+      if (!e.alive || e.dying || e.hitCooldown > 0) continue;
       if (aabbOverlap(hitbox, { x: e.x - 16, y: e.y - 16, w: 32, h: 32 })) {
         e.hp -= 1;
         e.hitCooldown = 0.3;
         spawnParticles(e.x, e.y, "#60a5fa", 6, 90);
-        if (e.hp <= 0) {
-          e.alive = false;
-          saveData.biomass += 5;
-        }
+        spawnImpactFlash(e.x, e.y, 26, "#93c5fd");
+        triggerHitStop(0.05);
+        if (e.hp <= 0) killEnemy(e);
       }
     }
     if (bossFight && bossFight.hp > 0) {
@@ -418,8 +545,16 @@ export function createUnderstoryGame({ canvas, ctx }) {
     b.hitsLanded += 1;
     b.restorationRadius = Math.min(280, (b.hitsLanded / b.maxHp) * 280);
     spawnParticles(b.x, b.y, "#7dd3fc", 10, 140);
+    spawnImpactFlash(b.x, b.y, 55, "#e0f2fe");
+    triggerHitStop(0.08);
+    triggerShake(7, 0.22);
     if (b.hitsLanded % 3 === 1) showConceptBanner("foodWeb");
-    if (b.hp <= 0) winBossFight();
+    if (b.hp <= 0) {
+      bossDeathFlash = 1;
+      triggerHitStop(0.12);
+      triggerShake(16, 0.4);
+      winBossFight();
+    }
   }
 
   function updateProjectiles(dt, zone) {
@@ -435,13 +570,11 @@ export function createUnderstoryGame({ canvas, ctx }) {
           gone = true;
         }
         for (const e of zoneRuntime.enemies) {
-          if (e.alive && e.hitCooldown <= 0 && Math.hypot(p.x - e.x, p.y - e.y) < 18 + p.r) {
+          if (e.alive && !e.dying && e.hitCooldown <= 0 && Math.hypot(p.x - e.x, p.y - e.y) < 18 + p.r) {
             e.hp -= 1;
             e.hitCooldown = 0.3;
-            if (e.hp <= 0) {
-              e.alive = false;
-              saveData.biomass += 5;
-            }
+            spawnImpactFlash(e.x, e.y, 26, "#93c5fd");
+            if (e.hp <= 0) killEnemy(e);
             gone = true;
             break;
           }
@@ -460,6 +593,11 @@ export function createUnderstoryGame({ canvas, ctx }) {
   function updateEnemies(dt) {
     for (const e of zoneRuntime.enemies) {
       if (!e.alive) continue;
+      if (e.dying) {
+        e.dyingTimer -= dt;
+        if (e.dyingTimer <= 0) e.alive = false;
+        continue;
+      }
       e.hitCooldown = Math.max(0, e.hitCooldown - dt);
       e.x += Math.sin(performance.now() / 600 + e.x) * 12 * dt;
       if (player.invincibleTimer <= 0 && Math.hypot(player.x + player.w / 2 - e.x, player.y + player.h / 2 - e.y) < 24) {
@@ -494,6 +632,7 @@ export function createUnderstoryGame({ canvas, ctx }) {
       telegraph: null,
       restorationRadius: carry * 280,
       bob: 0,
+      spinePhase: 0,
     };
     player.x = zone.bossArena.entryX + 40;
     player.y = zone.bossArena.y - player.h;
@@ -507,6 +646,7 @@ export function createUnderstoryGame({ canvas, ctx }) {
     const boss = BOSSES[b.bossId];
     b.hitCooldown = Math.max(0, b.hitCooldown - dt);
     b.bob += dt;
+    b.spinePhase += dt * 2.2; // independent rate from bob -- shared phases read as mechanical, not organic
     b.y = zone.bossArena.y - 10 + Math.sin(b.bob * 1.6) * 8;
 
     // The player must still be able to move, dodge and attack during a boss
@@ -523,12 +663,21 @@ export function createUnderstoryGame({ canvas, ctx }) {
 
     if (b.telegraph) {
       b.telegraph.timer -= dt;
-      if (b.telegraph.timer <= 0) executeBossAttack(b, boss, b.telegraph.attack);
+      if (b.telegraph.timer <= 0) {
+        executeBossAttack(b, boss, b.telegraph.attack, b.telegraph.preview);
+        b.telegraph = null;
+      }
     } else {
       b.attackCooldown -= dt;
       if (b.attackCooldown <= 0) {
         const atk = boss.attacks[Math.floor(rand(0, boss.attacks.length))];
-        b.telegraph = { attack: atk, timer: atk.telegraphMs / 1000 };
+        const duration = atk.telegraphMs / 1000;
+        // The danger zone/aim direction is frozen at the moment the
+        // telegraph starts and reused when the attack actually executes --
+        // so the warning shown to the player always matches where the hit
+        // will really land, and the telegraph can show it early instead of
+        // only revealing the danger zone the instant it becomes live.
+        b.telegraph = { attack: atk, timer: duration, duration, preview: computeAttackPreview(b, atk) };
       }
     }
 
@@ -547,17 +696,36 @@ export function createUnderstoryGame({ canvas, ctx }) {
     }
   }
 
-  function executeBossAttack(b, boss, atk) {
-    b.telegraph = null;
+  // Color-codes by attack type (not shared per-boss) so a returning player
+  // learns the language once -- cyan always means "incoming shot," amber
+  // always means "stand back," red always means "get off this ground" --
+  // rather than every boss's telegraph looking identical.
+  const TELEGRAPH_COLORS = { projectile: "#38bdf8", melee: "#fb923c", ground: "#f87171" };
+
+  function computeAttackPreview(b, atk) {
+    if (atk.type === "projectile") {
+      return { type: "projectile", angle: Math.atan2(player.y - b.y, player.x - b.x) };
+    }
+    if (atk.type === "melee") {
+      const dir = player.x < b.x ? -1 : 1;
+      return { type: "melee", rect: { x: dir > 0 ? b.x : b.x - atk.range, y: b.y - 40, w: atk.range, h: 80 } };
+    }
+    if (atk.type === "ground") {
+      return { type: "ground", rect: { x: player.x - atk.width / 2, y: ZONES[currentZoneId].bossArena.y - 40, w: atk.width, h: 60 } };
+    }
+    return null;
+  }
+
+  function executeBossAttack(b, boss, atk, preview) {
     b.attackCooldown = rand(1.4, 2.0);
     if (atk.type === "projectile") {
-      const ang = Math.atan2(player.y - b.y, player.x - b.x);
+      const ang = preview ? preview.angle : Math.atan2(player.y - b.y, player.x - b.x);
       projectiles.push({ owner: "boss", x: b.x, y: b.y, vx: Math.cos(ang) * atk.speed, vy: Math.sin(ang) * atk.speed, r: 10, life: 3 });
     } else if (atk.type === "melee") {
       const dir = player.x < b.x ? -1 : 1;
-      b.meleeZone = { timer: 0.3, rect: { x: dir > 0 ? b.x : b.x - atk.range, y: b.y - 40, w: atk.range, h: 80 } };
+      b.meleeZone = { timer: 0.3, rect: (preview && preview.rect) || { x: dir > 0 ? b.x : b.x - atk.range, y: b.y - 40, w: atk.range, h: 80 } };
     } else if (atk.type === "ground") {
-      b.groundZone = { timer: 0.35, rect: { x: player.x - atk.width / 2, y: ZONES[currentZoneId].bossArena.y - 40, w: atk.width, h: 60 } };
+      b.groundZone = { timer: 0.35, rect: (preview && preview.rect) || { x: player.x - atk.width / 2, y: ZONES[currentZoneId].bossArena.y - 40, w: atk.width, h: 60 } };
     }
   }
 
@@ -663,6 +831,31 @@ export function createUnderstoryGame({ canvas, ctx }) {
     const dt = Math.min(dtMs / 1000, 0.05);
     layoutTouchButtons();
 
+    // Hit-stop: a landed hit briefly freezes the whole frame (physics,
+    // timers, AI) before resuming -- the classic cheap "impact" trick. Kept
+    // short (40-120ms) on purpose so it reads as weight, not lag.
+    if (hitStopTimer > 0) {
+      hitStopTimer -= dt;
+      return;
+    }
+
+    if (shakeTime > 0) {
+      shakeTime -= dt;
+      const mag = shakeMag * Math.max(0, shakeTime / shakeDuration);
+      frameShakeX = (Math.random() * 2 - 1) * mag;
+      frameShakeY = (Math.random() * 2 - 1) * mag;
+    } else {
+      frameShakeX = 0;
+      frameShakeY = 0;
+    }
+    impactFlashes = impactFlashes.filter((f) => (f.life -= dt) > 0);
+    if (bossDeathFlash > 0) bossDeathFlash = Math.max(0, bossDeathFlash - dt * 3);
+    if (meleeSwing) {
+      meleeSwing.timer -= dt;
+      if (meleeSwing.timer <= 0) meleeSwing = null;
+    }
+    updateAmbientParticles(dt);
+
     if (bannerQueue.length) {
       bannerQueue = bannerQueue.filter((b) => (b.life -= dt) > 0);
     }
@@ -756,23 +949,110 @@ export function createUnderstoryGame({ canvas, ctx }) {
 
   // ---------------- draw: world ----------------
   function worldToScreen(x, y) {
-    return [x - camera.x, y - camera.y];
+    return [x - camera.x + frameShakeX, y - camera.y + frameShakeY];
   }
 
+  const TREE_ARCHETYPES = ["pine", "rounded", "bushy", "snag"];
+  function drawTreeShape(archetype, x, baseY, height, width, color) {
+    if (archetype === "snag") {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(2, width * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(x, baseY);
+      ctx.lineTo(x, baseY - height);
+      ctx.moveTo(x, baseY - height * 0.6);
+      ctx.lineTo(x + width * 0.3, baseY - height * 0.8);
+      ctx.moveTo(x, baseY - height * 0.4);
+      ctx.lineTo(x - width * 0.25, baseY - height * 0.55);
+      ctx.stroke();
+      return;
+    }
+    ctx.fillStyle = color;
+    if (archetype === "pine") {
+      ctx.beginPath();
+      ctx.moveTo(x, baseY - height);
+      ctx.lineTo(x + width / 2, baseY);
+      ctx.lineTo(x - width / 2, baseY);
+      ctx.fill();
+    } else if (archetype === "rounded") {
+      ctx.beginPath();
+      ctx.moveTo(x - width / 2, baseY);
+      ctx.quadraticCurveTo(x - width / 2, baseY - height, x, baseY - height);
+      ctx.quadraticCurveTo(x + width / 2, baseY - height, x + width / 2, baseY);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // bushy: a few overlapping canopy clumps
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(x + (i - 1) * width * 0.3, baseY - height * (0.4 + i * 0.18), width * 0.32, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.fillRect(x - width * 0.06, baseY - 4, width * 0.12, 10);
+  }
+
+  // Three parallax layers, each with seeded (stable, non-flickering) shape
+  // variation and tinted toward the sky's horizon color the farther back it
+  // sits -- the color-matching is what reads as atmospheric depth, far more
+  // than scroll speed alone did when every layer was identical flat triangles.
+  const PARALLAX_LAYERS = [
+    { scroll: 0.15, baseWidth: 90, baseHeight: 260, yFrac: 0.78, fogMix: 0.55, alpha: 0.72 },
+    { scroll: 0.3, baseWidth: 70, baseHeight: 190, yFrac: 0.82, fogMix: 0.28, alpha: 0.88 },
+    { scroll: 0.5, baseWidth: 55, baseHeight: 140, yFrac: 0.86, fogMix: 0.08, alpha: 1 },
+  ];
   function drawBackground(zone) {
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
     g.addColorStop(0, zone.palette.sky[0]);
     g.addColorStop(1, zone.palette.sky[1]);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "rgba(0,0,0,0.25)";
-    for (let i = 0; i < 6; i++) {
-      const wx = (i * 420 - camera.x * 0.3) % (canvas.width + 400) - 200;
-      ctx.beginPath();
-      ctx.moveTo(wx, canvas.height - 500);
-      ctx.lineTo(wx + 60, canvas.height - 150);
-      ctx.lineTo(wx - 60, canvas.height - 150);
-      ctx.fill();
+
+    const horizonColor = zone.palette.sky[1];
+    PARALLAX_LAYERS.forEach((layer, li) => {
+      const spacing = layer.baseWidth * 2.2;
+      const offset = (camera.x * layer.scroll) % spacing;
+      const treesNeeded = Math.ceil(canvas.width / spacing) + 2;
+      const tintedColor = lerpColor("#04110a", horizonColor, layer.fogMix);
+      const baseY = canvas.height * layer.yFrac;
+      ctx.globalAlpha = layer.alpha;
+      for (let i = -1; i <= treesNeeded; i++) {
+        const worldSlot = Math.floor((camera.x * layer.scroll + i * spacing) / spacing);
+        const seed = li * 10000 + worldSlot;
+        const x = i * spacing - offset;
+        const archetype = TREE_ARCHETYPES[Math.floor(seededRand(seed) * TREE_ARCHETYPES.length)];
+        const wVar = 0.7 + seededRand(seed + 50) * 0.6;
+        const hVar = 0.7 + seededRand(seed + 90) * 0.6;
+        drawTreeShape(archetype, x, baseY, layer.baseHeight * hVar, layer.baseWidth * wVar, tintedColor);
+      }
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // Full-frame post-process-style overlay: vignette, a warm/cool color
+  // grade tied to how restored the current zone is (the withered->living
+  // narrative should affect the whole scene, not just the ground), and a
+  // faint pre-baked grain texture. Cheap: cached gradient/pattern objects,
+  // no per-pixel work at runtime.
+  function drawAtmosphereOverlay(zone) {
+    const zs = saveData.zones[currentZoneId];
+    const restoration = zone ? 0.5 * (zs.bossDefeated ? 1 : 0) + 0.5 * (zs.flowersRevived.length / Math.max(1, zone.flowers.length)) : 0;
+
+    ctx.fillStyle = getVignette();
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.globalCompositeOperation = "overlay";
+    ctx.fillStyle = restoration > 0.5 ? `rgba(255,200,120,${0.04 + restoration * 0.07})` : `rgba(40,60,90,${0.12 - restoration * 0.1})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    if (grainPattern) {
+      ctx.save();
+      ctx.globalAlpha = 0.045;
+      ctx.fillStyle = grainPattern;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
     }
   }
 
@@ -840,6 +1120,15 @@ export function createUnderstoryGame({ canvas, ctx }) {
     for (const e of zoneRuntime.enemies) {
       if (!e.alive) continue;
       const [sx, sy] = worldToScreen(e.x, e.y);
+      ctx.save();
+      if (e.dying) {
+        // Brief scale-up-then-fade instead of vanishing instantly on death.
+        const t = 1 - e.dyingTimer / 0.22;
+        ctx.globalAlpha = Math.max(0, 1 - t);
+        ctx.translate(sx, sy);
+        ctx.scale(1 + t * 0.4, 1 + t * 0.4);
+        ctx.translate(-sx, -sy);
+      }
       ctx.fillStyle = "#94a3b8";
       ctx.beginPath();
       ctx.arc(sx, sy, 16, 0, Math.PI * 2);
@@ -849,7 +1138,51 @@ export function createUnderstoryGame({ canvas, ctx }) {
       ctx.arc(sx - 5, sy - 2, 3, 0, Math.PI * 2);
       ctx.arc(sx + 5, sy - 2, 3, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
     }
+  }
+
+  function drawMeleeSwing() {
+    if (!meleeSwing) return;
+    const t = 1 - meleeSwing.timer / meleeSwing.duration;
+    const [sx, sy] = worldToScreen(player.x + player.w / 2, player.y + player.h / 2 - 4);
+    const facing = meleeSwing.facing;
+    const innerR = player.w / 2 + 2;
+    const outerR = innerR + meleeSwing.reach;
+    const baseAngle = facing > 0 ? -0.9 : Math.PI - 0.9 + Math.PI * 0.2;
+    const sweep = 1.8;
+    const a0 = facing > 0 ? -sweep / 2 : Math.PI - sweep / 2;
+    const a1 = a0 + sweep * Math.min(1, t * 1.6);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - t) * 0.8;
+    const grad = ctx.createRadialGradient(sx, sy, innerR, sx, sy, outerR);
+    grad.addColorStop(0, "rgba(190,242,100,0)");
+    grad.addColorStop(0.7, "rgba(190,242,100,0.55)");
+    grad.addColorStop(1, "rgba(74,222,128,0.15)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(sx, sy, outerR, a0, a1);
+    ctx.arc(sx, sy, innerR, a1, a0, true);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    void baseAngle;
+  }
+
+  function drawImpactFlashes() {
+    for (const f of impactFlashes) {
+      const [sx, sy] = worldToScreen(f.x, f.y);
+      const t = f.life / f.max;
+      ctx.globalAlpha = t * 0.6;
+      const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, f.r * (1 + (1 - t) * 0.5));
+      grad.addColorStop(0, f.color);
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(sx, sy, f.r * (1 + (1 - t) * 0.5), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   function drawCritters() {
@@ -887,74 +1220,187 @@ export function createUnderstoryGame({ canvas, ctx }) {
     ctx.globalAlpha = 1;
   }
 
+  // Separate head/body shapes (each with its own stroke) read as one joined
+  // creature rather than an undifferentiated blob -- the visible seam acts
+  // as a "neck." An asymmetric twin-leaf hood (one tall, one short, both
+  // leaning the way the player faces) gives the silhouette a directional
+  // "tell" the way a single symmetric shape never does.
   function drawPlayer() {
     const [sx, sy] = worldToScreen(player.x, player.y);
     const blink = player.invincibleTimer > 0 && Math.floor(player.invincibleTimer * 14) % 2 === 0;
     ctx.save();
     ctx.globalAlpha = blink ? 0.4 : 1;
     const cx = sx + player.w / 2;
-    const cy = sy + player.h / 2;
-    ctx.fillStyle = "#22c55e";
+    const bodyCy = sy + player.h * 0.68;
+    const headCy = sy + player.h * 0.3;
+    const bodyRx = player.w / 2;
+    const bodyRy = player.h * 0.34;
+    const headR = player.w * 0.44;
+    const facing = player.facing;
+
+    ctx.fillStyle = "#166534";
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 4, player.w / 2, player.h / 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, bodyCy, bodyRx, bodyRy, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "#166534";
+    ctx.strokeStyle = "#0a3d1f";
     ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.fillStyle = "#bef264";
-    const earDir = player.facing;
+
+    ctx.fillStyle = "#22c55e";
     ctx.beginPath();
-    ctx.moveTo(cx - 6 * earDir, sy - 2);
-    ctx.lineTo(cx - 2 * earDir, sy - 16);
-    ctx.lineTo(cx + 2 * earDir, sy - 2);
+    ctx.arc(cx, headCy, headR, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#bef264";
+    ctx.beginPath();
+    ctx.moveTo(cx + facing * 3, headCy - headR * 0.6);
+    ctx.quadraticCurveTo(cx + facing * 9, headCy - headR * 1.8, cx + facing * 3, headCy - headR * 2.2);
+    ctx.quadraticCurveTo(cx - facing * 1, headCy - headR * 1.5, cx - facing * 1, headCy - headR * 0.6);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx - facing * 7, headCy - headR * 0.5);
+    ctx.quadraticCurveTo(cx - facing * 11, headCy - headR, cx - facing * 7, headCy - headR * 1.2);
+    ctx.quadraticCurveTo(cx - facing * 4, headCy - headR * 0.8, cx - facing * 4, headCy - headR * 0.5);
+    ctx.fill();
+
     ctx.fillStyle = "#052e16";
     ctx.beginPath();
-    ctx.arc(cx + player.facing * 5, cy, 3, 0, Math.PI * 2);
+    ctx.arc(cx + facing * headR * 0.4, headCy + 1, 3, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
+  // Deluge is built as a segmented serpentine body (overlapping circles
+  // along a sine-wave spine, tapering from a wide chest to a thin tail)
+  // plus a distinct teardrop head with asymmetric eyes, instead of one
+  // static ellipse -- a water dragon should read as sinuous, not blob-like.
   function drawBoss() {
     if (!bossFight) return;
     const b = bossFight;
-    const [sx, sy] = worldToScreen(b.x, b.y);
     const boss = BOSSES[b.bossId];
     const t = b.hp / b.maxHp;
+    const facing = player.x < b.x ? -1 : 1;
     ctx.save();
-    const grad = ctx.createRadialGradient(sx, sy, 10, sx, sy, 55);
-    grad.addColorStop(0, "#38bdf8");
-    grad.addColorStop(1, "#0369a1");
-    ctx.fillStyle = grad;
+
+    const segCount = 6;
+    for (let i = segCount - 1; i >= 0; i--) {
+      const tSeg = i / (segCount - 1); // 0 = head/chest, 1 = tail tip
+      const dist = tSeg * 86;
+      const wave = Math.sin(b.spinePhase - tSeg * 2.4) * 22;
+      const segX = b.x - facing * dist;
+      const segY = b.y + wave;
+      const [ssx, ssy] = worldToScreen(segX, segY);
+      const r = 20 + (1 - tSeg) * 26;
+      const grad = ctx.createRadialGradient(ssx - 6, ssy - 8, 3, ssx, ssy, r);
+      grad.addColorStop(0, "#7dd3fc");
+      grad.addColorStop(1, "#0369a1");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(ssx, ssy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#e0f2fe";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    const [hsx, hsy] = worldToScreen(b.x, b.y);
+    ctx.fillStyle = "#38bdf8";
     ctx.beginPath();
-    ctx.ellipse(sx, sy, 50 + Math.sin(b.bob * 2) * 4, 60, 0, 0, Math.PI * 2);
+    ctx.moveTo(hsx - facing * 34, hsy - 24);
+    ctx.quadraticCurveTo(hsx + facing * 30, hsy - 20, hsx + facing * 46, hsy);
+    ctx.quadraticCurveTo(hsx + facing * 30, hsy + 20, hsx - facing * 34, hsy + 24);
+    ctx.quadraticCurveTo(hsx - facing * 42, hsy, hsx - facing * 34, hsy - 24);
+    ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = "#e0f2fe";
     ctx.lineWidth = 3;
     ctx.stroke();
+
+    // Asymmetric eyes -- one larger "main" eye with a pupil, one smaller --
+    // a perfectly symmetric pair reads as inert; this reads as alert/alive.
     ctx.fillStyle = "#f0f9ff";
     ctx.beginPath();
-    ctx.arc(sx - 14, sy - 18, 6, 0, Math.PI * 2);
-    ctx.arc(sx + 14, sy - 18, 6, 0, Math.PI * 2);
+    ctx.arc(hsx + facing * 12, hsy - 10, 7, 0, Math.PI * 2);
     ctx.fill();
-    if (b.telegraph) {
-      ctx.strokeStyle = `rgba(255,255,255,${0.5 + Math.sin(performance.now() / 60) * 0.4})`;
-      ctx.lineWidth = 4;
+    ctx.fillStyle = "#082f49";
+    ctx.beginPath();
+    ctx.arc(hsx + facing * 14, hsy - 10, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#bae6fd";
+    ctx.beginPath();
+    ctx.arc(hsx + facing * 4, hsy + 7, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Translucent "wet" highlight streaks along the body.
+    ctx.strokeStyle = "rgba(224,242,254,0.5)";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 2; i++) {
+      const tSeg = 0.25 + i * 0.35;
+      const dist = tSeg * 86;
+      const wave = Math.sin(b.spinePhase - tSeg * 2.4) * 22;
+      const [ssx, ssy] = worldToScreen(b.x - facing * dist, b.y + wave);
       ctx.beginPath();
-      ctx.arc(sx, sy, 70, 0, Math.PI * 2);
+      ctx.arc(ssx, ssy - 10, 14, Math.PI * 1.1, Math.PI * 1.7);
       ctx.stroke();
     }
+
+    // Telegraph: color-coded by attack type (see TELEGRAPH_COLORS), and
+    // shows the real danger zone / aim line during the whole warning
+    // window -- not just once the attack goes live -- with intensity
+    // ramping up as it's about to fire.
+    if (b.telegraph) {
+      const color = TELEGRAPH_COLORS[b.telegraph.attack.type] || "#ffffff";
+      const urgency = 1 - b.telegraph.timer / b.telegraph.duration;
+      const pulse = 0.45 + urgency * 0.4 + Math.sin(performance.now() / (100 - urgency * 55)) * 0.2;
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = Math.max(0.3, Math.min(1, pulse));
+      ctx.lineWidth = 3 + urgency * 3;
+      ctx.beginPath();
+      ctx.arc(hsx, hsy, 64, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      const preview = b.telegraph.preview;
+      if (preview && preview.rect) {
+        const [rx, ry] = worldToScreen(preview.rect.x, preview.rect.y);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.16 + urgency * 0.22;
+        ctx.fillRect(rx, ry, preview.rect.w, preview.rect.h);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rx, ry, preview.rect.w, preview.rect.h);
+      } else if (preview && preview.type === "projectile") {
+        const [lx1, ly1] = worldToScreen(b.x, b.y);
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.25 + urgency * 0.35;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 8]);
+        ctx.beginPath();
+        ctx.moveTo(lx1, ly1);
+        ctx.lineTo(lx1 + Math.cos(preview.angle) * 420, ly1 + Math.sin(preview.angle) * 420);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+      }
+    }
+
     if (b.meleeZone) {
       const r = b.meleeZone.rect;
       const [rx, ry] = worldToScreen(r.x, r.y);
-      ctx.fillStyle = "rgba(248,113,113,0.35)";
+      ctx.fillStyle = TELEGRAPH_COLORS.melee;
+      ctx.globalAlpha = 0.45;
       ctx.fillRect(rx, ry, r.w, r.h);
+      ctx.globalAlpha = 1;
     }
     if (b.groundZone) {
       const r = b.groundZone.rect;
       const [rx, ry] = worldToScreen(r.x, r.y);
-      ctx.fillStyle = "rgba(248,113,113,0.35)";
+      ctx.fillStyle = TELEGRAPH_COLORS.ground;
+      ctx.globalAlpha = 0.45;
       ctx.fillRect(rx, ry, r.w, r.h);
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
 
@@ -989,6 +1435,7 @@ export function createUnderstoryGame({ canvas, ctx }) {
   function drawExplore() {
     const zone = ZONES[currentZoneId];
     drawBackground(zone);
+    drawAmbientParticles(zone);
     drawGround(zone);
     drawGateHints(zone);
     drawFlowers();
@@ -996,7 +1443,10 @@ export function createUnderstoryGame({ canvas, ctx }) {
     drawEnemies();
     drawProjectiles();
     drawPlayer();
+    drawMeleeSwing();
     drawParticles();
+    drawImpactFlashes();
+    drawAtmosphereOverlay(zone);
     drawTouchButtons();
     if (phase === "explore-tutorial") drawTutorialHints();
   }
@@ -1127,6 +1577,11 @@ export function createUnderstoryGame({ canvas, ctx }) {
     drawBackground(zone);
     drawGround(zone);
     drawPlayer();
+
+    if (bossDeathFlash > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${bossDeathFlash * 0.85})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
     const clockCx = canvas.width / 2;
     const clockEnterT = clamp(t / 0.3, 0, 1);
@@ -1326,11 +1781,15 @@ export function createUnderstoryGame({ canvas, ctx }) {
     else if (phase === "boss-fight") {
       const zone = ZONES[currentZoneId];
       drawBackground(zone);
+      drawAmbientParticles(zone);
       drawGround(zone);
       drawBoss();
       drawProjectiles();
       drawPlayer();
+      drawMeleeSwing();
       drawParticles();
+      drawImpactFlashes();
+      drawAtmosphereOverlay(zone);
       drawTouchButtons();
     } else if (phase === "boss-retreat") drawBossRetreat();
     else if (phase === "boss-defeat-cutscene") drawCutscene();
