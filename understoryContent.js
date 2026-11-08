@@ -173,12 +173,17 @@ export const SPECIES = [
 // the showConceptBanner() caller in understoryGame.js truncating defensively,
 // but authored short on purpose).
 // ---------------------------------------------------------------------------
+// Each attack maps to an ordered *list* of concepts, not a single one: the
+// engine shows whichever the player has seen the fewest times, so repeated
+// attacks keep teaching new terms (biotic, abiotic, habitat...) instead of
+// repeating the same line, and every term gets taught before any repeats.
 export const ATTACK_CONCEPTS = {
-  tendrilWhip: "producers",
-  sporeBurst: "decomposers",
-  rootSlam: "limitingFactor",
-  photosynthesisSurge: "energyTransfer",
-  reviveFlower: "sustainability",
+  // Tendril Whip hits living plant-matter -- producer/abiotic-themed terms.
+  tendrilWhip: ["producers", "photosynthesis", "biotic", "abiotic", "habitat"],
+  // Spore Burst seeds fungi -- decomposer/recycling-themed terms.
+  sporeBurst: ["decomposers", "organicMatter", "detritivore", "matterCycling"],
+  // Reviving a flower restores a producer -- ecosystem-scale terms.
+  reviveFlower: ["sustainability", "population", "community", "ecosystem", "species"],
 };
 
 // ---------------------------------------------------------------------------
@@ -197,23 +202,49 @@ export const ZONES = {
     bossId: "cinder",
     width: 2600,
     height: 620,
-    spawn: { x: 120, y: 420 },
-    palette: { withered: "#201a14", living: "#1c3321", sky: ["#241c14", "#120d0a"] },
+    spawn: { x: 120, y: 440 },
+    introConcept: "habitat",
+    // withered/sky = the gloomy-but-readable starting state; living/skyLiving
+    // = fully restored. The scene blends between them as flowers are revived
+    // and the boss is beaten, so brightness itself tracks progress.
+    palette: {
+      withered: "#5b4a37",
+      living: "#3f8a47",
+      sky: ["#6a5f4d", "#3b3227"],
+      skyLiving: ["#8fd2b2", "#f4e8b4"],
+      tree: "#2f3b2b",
+      treeLiving: "#3f7a45",
+    },
+    // Platform rises are all <= ~55px so every one is reachable: max jump
+    // height is v^2/2g = 520^2/(2*1600) ~= 84px.
     ground: [
       { x: 0, y: 500, w: 2600, h: 120 },
-      { x: 760, y: 410, w: 180, h: 24 },
-      { x: 1180, y: 360, w: 160, h: 24 },
-      { x: 1700, y: 430, w: 220, h: 24 },
+      { x: 700, y: 440, w: 170, h: 22 },
+      { x: 930, y: 385, w: 170, h: 22 },
+      { x: 1180, y: 335, w: 170, h: 22 },
+      { x: 1700, y: 435, w: 220, h: 22 },
     ],
+    // Flower y = the surface its stem is rooted in (ground/platform top).
     flowers: [
-      { id: "og1", x: 300, y: 470 },
-      { id: "og2", x: 980, y: 380 },
-      { id: "og3", x: 2200, y: 470 },
+      { id: "og1", x: 300, y: 500 },
+      { id: "og2", x: 1015, y: 385 },
+      { id: "og3", x: 2250, y: 500 },
+    ],
+    // Wildlife returns as green reaches it (see "requires", a 0-1 local
+    // restoration threshold) -- the biotic recovery that follows reviving
+    // producers. y = the surface it stands on.
+    critters: [
+      { id: "og-elk", speciesId: "elk", kind: "elk", x: 430, y: 500, facing: 1, requires: 0.35 },
+      { id: "og-log", speciesId: "fungus", kind: "nurseLog", x: 2090, y: 500, facing: 1, requires: 0 },
+      { id: "og-slug", speciesId: "slug", kind: "slug", x: 2078, y: 478, facing: 1, requires: 0.35 },
+      { id: "og-cougar", speciesId: "cougar", kind: "cougar", x: 2400, y: 500, facing: -1, requires: 0.4 },
     ],
     enemies: [],
+    // Gates stand on the ground (y = ground surface) and are walked into;
+    // "arrive" is where the player appears in the destination zone.
     gates: [
-      { toZone: "riverValley", x: 2500, y: 380, requires: [] },
-      { toZone: "mountainSlopes", x: -80, y: 380, requires: ["rootGrip"], locked: true },
+      { toZone: "riverValley", x: 2520, y: 500, arrive: { x: 170, y: 440 } },
+      { toZone: "mountainSlopes", x: 70, y: 500, locked: true, requires: "rootGrip", label: "Root Grip" },
     ],
   },
   riverValley: {
@@ -223,8 +254,17 @@ export const ZONES = {
     bossId: "deluge",
     width: 3000,
     height: 620,
-    spawn: { x: 100, y: 420 },
-    palette: { withered: "#3a3226", living: "#1f3d33", sky: ["#2c2416", "#15110c"] },
+    spawn: { x: 170, y: 440 },
+    introConcept: "ecosystem",
+    palette: {
+      withered: "#7a664a",
+      living: "#3b8c6c",
+      sky: ["#6f624c", "#40372a"],
+      skyLiving: ["#8bd6cf", "#f7ebb8"],
+      tree: "#33402f",
+      treeLiving: "#3f8a6a",
+    },
+    // The 80px gaps are the dry river channel; each is jumpable.
     ground: [
       { x: 0, y: 500, w: 1100, h: 120 },
       { x: 1180, y: 460, w: 260, h: 24 },
@@ -232,16 +272,20 @@ export const ZONES = {
       { x: 2500, y: 500, w: 500, h: 120 },
     ],
     flowers: [
-      { id: "rv1", x: 260, y: 470 },
-      { id: "rv2", x: 1620, y: 470 },
-      { id: "rv3", x: 2700, y: 470 },
+      { id: "rv1", x: 260, y: 500 },
+      { id: "rv2", x: 1700, y: 500 },
+      { id: "rv3", x: 2700, y: 500 },
+    ],
+    critters: [
+      { id: "rv-eagle", speciesId: "eagle", kind: "eagle", x: 430, y: 500, facing: 1, requires: 0.35 },
+      { id: "rv-bear", speciesId: "bear", kind: "bear", x: 1810, y: 500, facing: -1, requires: 0.35 },
     ],
     enemies: [
       { id: "rv-silt-1", type: "siltWisp", x: 900, y: 470 },
       { id: "rv-silt-2", type: "siltWisp", x: 2100, y: 470 },
     ],
     bossArena: { x: 2500, y: 500, w: 500, h: 120, entryX: 2560 },
-    gates: [{ toZone: "oldGrowth", x: -60, y: 380, requires: [] }],
+    gates: [{ toZone: "oldGrowth", x: 60, y: 500, arrive: { x: 2380, y: 440 } }],
   },
 };
 
@@ -278,8 +322,12 @@ export const BOSSES = {
     tier: 1,
     unlockAbility: "gillStep",
     unlockLabel: "Gill-Step",
-    restorationFrom: "#3a3226",
-    restorationTo: "#1f5c45",
+    restorationFrom: "#7a664a",
+    restorationTo: "#8bd6cf",
+    // Cycled (least-seen first) as hits land -- the consumer/energy/limits
+    // terms that the combat itself illustrates (a flood resets who can live
+    // here, who competes for what's left, and how energy moves through it).
+    concepts: ["foodWeb", "competition", "limitingFactor", "energyTransfer", "foodChain", "consumers"],
     attacks: [
       { id: "waterBolt", telegraphMs: 550, type: "projectile", speed: 260 },
       { id: "tailSweep", telegraphMs: 650, type: "melee", range: 150 },
