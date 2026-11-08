@@ -12,9 +12,9 @@
 // loss is handled entirely inside this file's own state, never isOver().
 
 import { CONCEPTS, SPECIES, ATTACK_CONCEPTS, ZONES, ZONE_ORDER, BOSSES, JOURNAL_SECTIONS, ALL_ZONES_AUTHORED, CANONICAL_DISASTER_ZONE_IDS } from "./understoryContent.js?v=2";
-import { TAU, clamp, easeOutCubic, seededRand, rr as rrPath, wrapLines, drawKeyCap, drawPanel, drawBackdrop, drawPlayerLight, drawContactShadow, drawGroundBackdrop, drawGroundPiece, drawGate, drawFlower, flowerStyleIndex, mixRgb, rgbCss } from "./understoryArt.js?v=1";
-import { drawSylvan } from "./understorySylvan.js?v=1";
-import { drawCritter, drawSiltWisp, drawDeluge, critterTopY } from "./understoryCreatures.js?v=1";
+import { TAU, clamp, easeOutCubic, seededRand, rr as rrPath, wrapLines, drawKeyCap, drawPanel, drawBackdrop, drawPlayerLight, drawContactShadow, drawGroundBackdrop, drawGroundPiece, drawGate, drawFlower, flowerStyleIndex, mixRgb, rgbCss } from "./understoryArt.js?v=2";
+import { drawPerson } from "./understoryPerson.js?v=1";
+import { drawCritter, drawSiltWisp, drawDeluge, critterTopY } from "./understoryCreatures.js?v=2";
 
 const SAVE_KEY = "fireBox.understory.save.v1";
 
@@ -23,7 +23,7 @@ const MOVE_SPEED = 230;
 const MOVE_ACCEL = 2200;
 const JUMP_VELOCITY = -520;
 const MAX_FALL = 900;
-const PLAYER_W = 26;
+const PLAYER_W = 18; // a human silhouette is slimmer than the old spirit
 const PLAYER_H = 38;
 const REVIVE_RANGE = 70;
 const REVIVE_HOLD_TIME = 0.6;
@@ -201,8 +201,29 @@ export function createUnderstoryGame({ canvas, ctx }) {
     if (k) keys[k] = false;
     if (e.code === "KeyR") pressed.revive = false;
   });
+  // The character must only ever move while the player is actually holding a
+  // control. A key-up that never arrives (focus lost mid-press: alt-tab, the OS
+  // overview key, a browser shortcut, a pause menu) would otherwise leave the
+  // character running forever, so every held input is dropped whenever focus
+  // or visibility is lost, a session starts/ends, or the game was frozen.
+  function releaseAllInput() {
+    keys.left = keys.right = keys.jump = keys.down = false;
+    pressed.melee = pressed.ranged = pressed.revive = pressed.scan = false;
+    jumpBuffer = 0;
+    touchMove = null;
+    journalDrag = null;
+    buttonPointers.clear();
+  }
+  window.addEventListener("blur", releaseAllInput);
+  window.addEventListener("pagehide", releaseAllInput);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) releaseAllInput();
+  });
 
   let touchMove = null;
+  // which on-screen button each active finger is holding (so lifting a finger
+  // only releases ITS button -- never a key the player is holding on the keyboard)
+  const buttonPointers = new Map();
   let touchButtons = [];
   function layoutTouchButtons() {
     if (!usingTouch) {
@@ -263,6 +284,7 @@ export function createUnderstoryGame({ canvas, ctx }) {
     }
     for (const b of touchButtons) {
       if (Math.hypot(px - b.x, py - b.y) < b.r) {
+        buttonPointers.set(e.pointerId, b.id);
         if (b.id === "jump") {
           keys.jump = true;
           jumpBuffer = 0.14;
@@ -274,8 +296,15 @@ export function createUnderstoryGame({ canvas, ctx }) {
         return;
       }
     }
-    if (px < canvas.width * 0.5) {
+    // Drag-to-move is a TOUCH control only. A mouse press on the left half of the
+    // screen used to start it too, and if that button was released outside the
+    // window the character kept steering after the pointer for good.
+    const touchLike = e.pointerType === "touch" || e.pointerType === "pen";
+    if (touchLike && px < canvas.width * 0.5) {
       touchMove = { id: e.pointerId, startX: px };
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {}
     }
     pressed.any = true;
   });
@@ -300,11 +329,16 @@ export function createUnderstoryGame({ canvas, ctx }) {
       keys.left = false;
       keys.right = false;
     }
-    keys.jump = false;
-    pressed.revive = false;
+    const held = buttonPointers.get(e.pointerId);
+    if (held) {
+      buttonPointers.delete(e.pointerId);
+      if (held === "jump") keys.jump = false;
+      if (held === "revive") pressed.revive = false;
+    }
   }
   window.addEventListener("pointerup", releaseTouch);
   window.addEventListener("pointercancel", releaseTouch);
+  canvas.addEventListener("lostpointercapture", releaseTouch);
 
   // ---------------- concept banners ----------------
   // One banner at a time, each held for BANNER_DURATION seconds. Requests that
@@ -920,7 +954,7 @@ export function createUnderstoryGame({ canvas, ctx }) {
     saveData.abilities[boss.unlockAbility] = true;
     saveData.biomass += 60;
     persistSave();
-    // long enough that the restored valley (wildlife back, the Sylvan resting
+    // long enough that the restored valley (wildlife back, the ranger resting
     // among it) actually gets a few seconds on screen after the clock wipe
     activeBossLine = { text: boss.defeatLine, timer: 4.6 };
     cutscene = { timer: 0, duration: 5.2, zoneId: zone.id, fromPalette: boss.restorationFrom, toPalette: boss.restorationTo };
@@ -1003,13 +1037,15 @@ export function createUnderstoryGame({ canvas, ctx }) {
     titleBlink = 0;
     endingTimer = 0;
     tutorialFlags = { moved: false, jumped: false, attacked: false, revived: false };
-    keys.left = keys.right = keys.jump = keys.down = false;
+    releaseAllInput();
     layoutTouchButtons();
     gameOver = false;
     phase = "title";
   }
 
   function startSession() {
+    // the key/tap that dismissed the title must not also start the character walking
+    releaseAllInput();
     if (saveData.completedTutorial) {
       enterZone(saveData.lastCheckpoint.zoneId || "oldGrowth");
     } else {
@@ -1022,6 +1058,9 @@ export function createUnderstoryGame({ canvas, ctx }) {
   function update(dtMs) {
     if (gameOver) return;
     const dt = Math.min(dtMs / 1000, 0.05);
+    // a gap this long means the game was frozen (pause menu, hidden tab): any key
+    // released during it was never seen, so start clean
+    if (dtMs > 1000) releaseAllInput();
     frameEma += (Math.min(dtMs, 100) - frameEma) * 0.04;
     if (!lite) {
       if (frameEma > 30) {
@@ -1157,7 +1196,7 @@ export function createUnderstoryGame({ canvas, ctx }) {
   // ======================================================================
   // draw
   // ======================================================================
-  const SYLVAN_SCALE = 0.7;
+  const PERSON_SCALE = 0.6;
 
   function worldToScreen(x, y) {
     return [x - camera.x + frameShakeX, y - camera.y + frameShakeY];
@@ -1173,6 +1212,9 @@ export function createUnderstoryGame({ canvas, ctx }) {
     const zs = saveData.zones[zone.id];
     const flowers = zoneRuntime.flowers || [];
     const frac = flowers.length ? flowers.filter((f) => f.revived).length / flowers.length : 0;
+    // A zone whose disaster boss is not built yet (the hub's wildfire) is fully
+    // restored by its flowers alone; otherwise flowers are half and the boss half.
+    if (!BOSSES[zone.bossId]) return clamp(frac, 0, 1);
     const defeated = zs.bossDefeated ? 1 : 0;
     let r = 0.5 * defeated + 0.5 * frac;
     if (bossFight && !defeated) r += 0.25 * (bossFight.hitsLanded / bossFight.maxHp);
@@ -1223,6 +1265,94 @@ export function createUnderstoryGame({ canvas, ctx }) {
     ctx.fillStyle = hg;
     ctx.fillRect(0, 0, W, H * 0.5);
     ctx.restore();
+  }
+
+  // ---------------- lighting: the dark that life pushes back ----------------
+  // The world starts in deep night. A tiny offscreen "darkness" layer is filled
+  // with the night colour, then a soft hole is cut for every light (the player's
+  // seed-lantern, each revived flower and its spreading glow, ember-glowing
+  // withered flowers, open gates, enemies, spores, the boss) and the result is
+  // scaled over the scene. As the zone heals the ambient darkness fades toward
+  // zero, so the whole screen brightens -- adding life literally adds light.
+  let lightCanvas = null;
+  let lightCtx = null;
+  const LIGHT_RES = 0.25; // soft light needs very little resolution
+  function ambientDarkness(r) {
+    return 0.68 * Math.pow(1 - clamp(r, 0, 1), 1.15);
+  }
+  // lights are in screen px: { x, y, r (radius), a (0..1 strength) }
+  function applyLighting(darkA, lights, tintMix) {
+    if (darkA < 0.012) return;
+    const W = canvas.width;
+    const H = canvas.height;
+    const lw = Math.max(2, Math.ceil(W * LIGHT_RES));
+    const lh = Math.max(2, Math.ceil(H * LIGHT_RES));
+    if (!lightCanvas) {
+      lightCanvas = document.createElement("canvas");
+      lightCtx = lightCanvas.getContext("2d");
+    }
+    if (lightCanvas.width !== lw || lightCanvas.height !== lh) {
+      lightCanvas.width = lw;
+      lightCanvas.height = lh;
+    }
+    const c = lightCtx;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalCompositeOperation = "source-over";
+    c.clearRect(0, 0, lw, lh);
+    c.fillStyle = rgbCss(mixRgb([8, 15, 38], [58, 42, 54], clamp(tintMix, 0, 1)), darkA);
+    c.fillRect(0, 0, lw, lh);
+    c.globalCompositeOperation = "destination-out";
+    for (const L of lights) {
+      const x = L.x * LIGHT_RES;
+      const y = L.y * LIGHT_RES;
+      const r = L.r * LIGHT_RES;
+      if (x + r < 0 || x - r > lw || y + r < 0 || y - r > lh) continue;
+      const g = c.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, "rgba(0,0,0," + L.a + ")");
+      g.addColorStop(0.5, "rgba(0,0,0," + L.a * 0.62 + ")");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = g;
+      c.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    c.globalCompositeOperation = "source-over";
+    ctx.drawImage(lightCanvas, 0, 0, W, H);
+  }
+  function worldLight(wx, wy, wr, a) {
+    const [sx, sy] = worldToScreen(wx, wy);
+    return { x: sx * zoom, y: sy * zoom, r: wr * zoom, a };
+  }
+  function gatherLights(zone, extra) {
+    const L = [];
+    // the player's seed-lantern, which swells while channelling a revive
+    const reviving = pressed.revive && zoneRuntime.nearFlower;
+    L.push(worldLight(player.x + player.w / 2, player.y + player.h * 0.55, 205 + (reviving ? 45 : 0), 1));
+    for (const f of zoneRuntime.flowers) {
+      if (f.revived) {
+        // the green spreads and the light spreads with it
+        if (f.radius > 6) L.push(worldLight(f.x, f.y - 24, f.radius * 0.95 + 55, 0.94));
+      } else {
+        // a withered flower keeps one faint ember, so it can be found in the dark
+        L.push(worldLight(f.x + 13, f.y - 29, 52 + 6 * Math.sin(worldTime * 2.3 + f.x), 0.6));
+      }
+    }
+    for (const e of zoneRuntime.enemies) if (e.alive && !e.dying) L.push(worldLight(e.x, e.y, 80, 0.78));
+    for (const g of zone.gates || []) {
+      const locked = gateIsLocked(g) || !ZONES[g.toZone];
+      L.push(worldLight(g.x, g.y - 50, locked ? 70 : 140, locked ? 0.42 : 0.88));
+    }
+    for (const p of projectiles) L.push(worldLight(p.x, p.y, 84, 0.85));
+    if (bossFight && bossFight.zoneId === currentZoneId) {
+      const b = bossFight;
+      const dir = player.x < b.x ? 1 : -1; // the body trails away from the player
+      L.push(worldLight(b.x, b.y, 300, 0.9));
+      L.push(worldLight(b.x + dir * 80, b.y + 10, 220, 0.8));
+      if (b.restorationRadius > 4 && zone.bossArena) L.push(worldLight(zone.bossArena.entryX + 150, zone.bossArena.y - 30, b.restorationRadius * 0.95 + 100, 0.8));
+    }
+    if (extra) for (const e of extra) L.push(e);
+    return L;
+  }
+  function lightPass(zone, extra) {
+    applyLighting(ambientDarkness(visR), gatherLights(zone, extra), visR);
   }
 
   // Fireflies in the gloom, golden pollen once the zone is alive, plus
@@ -1481,11 +1611,11 @@ export function createUnderstoryGame({ canvas, ctx }) {
     }
     const blink = player.invincibleTimer > 0 && Math.floor(player.invincibleTimer * 14) % 2 === 0;
     const reviving = zoneRuntime.nearFlower && pressed.revive && phase !== "boss-fight";
-    drawSylvan(ctx, {
+    drawPerson(ctx, {
       x: sx,
       y: sy,
       facing: player.facing,
-      scale: SYLVAN_SCALE,
+      scale: PERSON_SCALE,
       t: worldTime,
       glow: 1 + visR * 0.2,
       speed: Math.abs(player.vx) / MOVE_SPEED,
@@ -1501,7 +1631,7 @@ export function createUnderstoryGame({ canvas, ctx }) {
       alpha: blink ? 0.45 : 1,
     });
   }
-  // the heartwood lantern: a warm pool of light that travels with the player
+  // the seed-lantern: a warm pool of colour that travels with the player
   function drawPlayerLantern() {
     const [sx, sy] = worldToScreen(player.x + player.w / 2, player.y + player.h * 0.42);
     drawPlayerLight(ctx, sx, sy, 1 + (pressed.revive && zoneRuntime.nearFlower ? 0.5 : 0), visR);
@@ -1509,7 +1639,7 @@ export function createUnderstoryGame({ canvas, ctx }) {
 
   // ---------------- boss ----------------
 
-  function drawBoss() {
+  function drawBossBody() {
     if (!bossFight) return;
     const b = bossFight;
     const facing = player.x < b.x ? -1 : 1;
@@ -1527,9 +1657,17 @@ export function createUnderstoryGame({ canvas, ctx }) {
       glow: tele ? TELEGRAPH_COLORS[tele.attack.type] : null,
       hurt: b.hitCooldown > 0 ? b.hitCooldown / 0.25 : 0,
     });
+  }
 
-    // Telegraph: color-coded by attack type, showing the real danger zone / aim
-    // line for the whole warning window with intensity ramping as it fires.
+  // Telegraph: color-coded by attack type, showing the real danger zone / aim
+  // line for the whole warning window with intensity ramping as it fires. Drawn
+  // after the lighting pass so warnings stay bright and readable in the dark.
+  function drawBossFx() {
+    if (!bossFight) return;
+    const b = bossFight;
+    const [hsx, hsy] = worldToScreen(b.x, b.y);
+    const tele = b.telegraph;
+    const urgency = tele ? 1 - tele.timer / tele.duration : 0;
     ctx.save();
     if (tele) {
       const color = TELEGRAPH_COLORS[tele.attack.type] || "#ffffff";
@@ -1622,7 +1760,6 @@ export function createUnderstoryGame({ canvas, ctx }) {
   // ---------------- scene composition ----------------
   function drawWorld(zone) {
     drawBackground(zone);
-    drawAmbient();
     drawGround(zone);
     drawGates(zone);
     drawCritters();
@@ -1634,6 +1771,12 @@ export function createUnderstoryGame({ canvas, ctx }) {
     ctx.scale(zoom, zoom);
     drawWorld(zone);
     drawEnemies();
+    ctx.restore();
+    lightPass(zone);
+    // everything below is a source of light itself, so it sits above the darkness
+    ctx.save();
+    ctx.scale(zoom, zoom);
+    drawAmbient();
     drawPlayerLantern();
     drawPlayer();
     drawProjectiles();
@@ -1649,7 +1792,13 @@ export function createUnderstoryGame({ canvas, ctx }) {
     ctx.save();
     ctx.scale(zoom, zoom);
     drawWorld(zone);
-    drawBoss();
+    drawBossBody();
+    ctx.restore();
+    lightPass(zone);
+    ctx.save();
+    ctx.scale(zoom, zoom);
+    drawAmbient();
+    drawBossFx();
     drawPlayerLantern();
     drawPlayer();
     drawProjectiles();
@@ -1877,35 +2026,44 @@ export function createUnderstoryGame({ canvas, ctx }) {
     const H = canvas.height;
     const t = worldTime;
     const pal = ZONES.oldGrowth.palette;
-    const dawn = 0.5 + 0.08 * Math.sin(t * 0.25);
-    drawBackdrop(ctx, W, H, pal, dawn, t * 16, t, lite);
-    // restored ground band with growing plants
+    // The game opens in the dark: the withered watershed at night, with only the
+    // ranger's lantern and a few fireflies cutting through it. Life (and light)
+    // come back as you play.
+    drawBackdrop(ctx, W, H, pal, 0.05, t * 10, t, lite);
     const gy = H * 0.84;
-    const v = { ox: 0, oy: 0, W, H };
+    const titleY = Math.max(H * 0.27, 150);
+    const sc = clamp((gy - (titleY + 84)) / 96, 1.3, 4);
+    const px = W * 0.5;
+    const v = { ox: 0, oy: 0, W, H, lite };
     drawGroundBackdrop(ctx, v, gy);
-    drawGroundPiece(ctx, v, { x: -60, y: gy, w: W + 120, h: H - gy + 40 }, 3, () => 1, pal, t);
-    // fireflies
+    // a little life already follows the ranger: green only right around their feet
+    drawGroundPiece(ctx, v, { x: -60, y: gy, w: W + 120, h: H - gy + 40 }, 3, (wx) => clamp((150 - Math.abs(wx - px)) / 80, 0, 1), pal, t);
+    const flies = [];
+    for (let i = 0; i < 22; i++) {
+      flies.push({
+        x: ((seededRand(i * 3.7) * W + Math.sin(t * 0.4 + i) * 40) % W + W) % W,
+        y: H * (0.3 + seededRand(i * 9.1) * 0.55) + Math.sin(t * 0.9 + i * 1.3) * 14,
+        a: 0.55 + 0.3 * Math.sin(t * 2 + i),
+      });
+    }
+    const lights = [{ x: px + 3 * sc, y: gy - 38 * sc, r: 300 + 22 * Math.sin(t * 2.1), a: 1 }];
+    for (let i = 0; i < 9; i++) lights.push({ x: flies[i].x, y: flies[i].y, r: 46, a: 0.7 });
+    applyLighting(0.58, lights, 0.05);
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    for (let i = 0; i < 26; i++) {
-      const fx = ((seededRand(i * 3.7) * W + Math.sin(t * 0.4 + i) * 40) % W + W) % W;
-      const fy = H * (0.3 + seededRand(i * 9.1) * 0.55) + Math.sin(t * 0.9 + i * 1.3) * 14;
-      const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, 9);
-      g.addColorStop(0, `rgba(255,240,170,${0.55 + 0.3 * Math.sin(t * 2 + i)})`);
+    for (const fl of flies) {
+      const g = ctx.createRadialGradient(fl.x, fl.y, 0, fl.x, fl.y, 9);
+      g.addColorStop(0, "rgba(255,240,170," + fl.a + ")");
       g.addColorStop(1, "rgba(255,240,170,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(fx, fy, 9, 0, TAU);
+      ctx.arc(fl.x, fl.y, 9, 0, TAU);
       ctx.fill();
     }
     ctx.restore();
-    // the Sylvan, standing at the edge of the forest, looking toward the light
-    const titleY = Math.max(H * 0.27, 150);
-    const sc = clamp((gy - (titleY + 84)) / 108, 1.3, 3.8);
-    const px = W * 0.5;
-    drawContactShadow(ctx, px, gy + 2, 24 * sc, 0.5);
-    drawPlayerLight(ctx, px, gy - 46 * sc, 2.2, dawn);
-    drawSylvan(ctx, { x: px, y: gy, facing: 1, scale: sc, t, glow: 1.2, onGround: true, headLook: 1 });
+    drawContactShadow(ctx, px, gy + 2, 22 * sc, 0.5);
+    drawPlayerLight(ctx, px + 3 * sc, gy - 38 * sc, 1.6, 0.05);
+    drawPerson(ctx, { x: px, y: gy, facing: 1, scale: sc, t, glow: 1.3, onGround: true });
     // title lockup
     const fs = Math.round(Math.min(W * 0.13, H * 0.13, 88));
     const ty = titleY;
@@ -1971,6 +2129,13 @@ export function createUnderstoryGame({ canvas, ctx }) {
     ctx.globalAlpha = easeOutCubic(clamp(intro * 2.4, 0, 1));
     drawDeluge(ctx, { sx: hsx, sy: hsy + (1 - easeOutCubic(clamp(intro * 2, 0, 1))) * 40, facing: -1, phase: worldTime * 2.2, t: worldTime, clean: 0, open: 0.2 });
     ctx.restore();
+    ctx.restore();
+    // the dragon brings its own cold glow into the dark arena
+    const dl = worldLight(zone.bossArena.entryX + 150, zone.bossArena.y - 10, 330 * easeOutCubic(clamp(intro * 2.4, 0, 1)), 0.85);
+    lightPass(zone, [dl]);
+    ctx.save();
+    ctx.scale(zoom, zoom);
+    drawAmbient();
     drawPlayerLantern();
     drawPlayer();
     ctx.restore();
@@ -2005,6 +2170,12 @@ export function createUnderstoryGame({ canvas, ctx }) {
     ctx.save();
     ctx.scale(zoom, zoom);
     drawWorld(zone);
+    ctx.restore();
+    lightPass(zone);
+    ctx.save();
+    ctx.scale(zoom, zoom);
+    drawAmbient();
+    drawPlayerLantern();
     drawPlayer();
     ctx.restore();
     drawAtmosphereOverlay();
@@ -2082,6 +2253,11 @@ export function createUnderstoryGame({ canvas, ctx }) {
     ctx.save();
     ctx.scale(zoom, zoom);
     drawWorld(zone);
+    ctx.restore();
+    lightPass(zone);
+    ctx.save();
+    ctx.scale(zoom, zoom);
+    drawAmbient();
     drawPlayerLantern();
     drawPlayer();
     ctx.restore();
@@ -2122,7 +2298,7 @@ export function createUnderstoryGame({ canvas, ctx }) {
   }
 
   // The restored valley: warm sky, full-grown plants, wildlife back in the
-  // frame, the Sylvan resting among it all. Screen-space, so it can be drawn
+  // frame, the ranger resting among it all. Screen-space, so it can be drawn
   // inside the circular clock wipe.
   function drawAftermath(zone, since) {
     const W = canvas.width;
@@ -2151,11 +2327,11 @@ export function createUnderstoryGame({ canvas, ctx }) {
     for (const [fx, id] of [[0.34, "a1"], [0.62, "b2"], [0.72, "c3"], [0.08, "d4"]]) {
       drawFlower(ctx, vf, { x: W * fx, y: gy, revived: true, radius: 0 }, { t, bloom: clamp(since / 1.6, 0, 1), styleIdx: flowerStyleIndex(id), near: false, hold: 0, player: null });
     }
-    // the Sylvan, seated among the restored growth
-    const ps = clamp(H / 230, 1.3, 2.6);
-    drawContactShadow(ctx, W * 0.5, gy + 3, 22 * ps, 0.5);
-    drawPlayerLight(ctx, W * 0.5, gy - 22 * ps, 1.4, 1);
-    drawSylvan(ctx, { x: W * 0.5, y: gy, facing: 1, scale: ps, t, glow: 1, onGround: true, sitting: true });
+    // the ranger, resting among the restored growth with the lantern beside them
+    const ps = clamp(H / 190, 1.5, 3.1);
+    drawContactShadow(ctx, W * 0.5, gy + 3, 24 * ps, 0.5);
+    drawPlayerLight(ctx, W * 0.5, gy - 24 * ps, 1.4, 1);
+    drawPerson(ctx, { x: W * 0.5, y: gy, facing: 1, scale: ps, t, glow: 1, onGround: true, sitting: true });
     // drifting pollen & butterflies
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
@@ -2380,7 +2556,9 @@ export function createUnderstoryGame({ canvas, ctx }) {
   function getHud() {
     const zone = ZONES[currentZoneId];
     const zs = saveData.zones[currentZoneId];
-    const pct = zone ? Math.round(50 * (zs.bossDefeated ? 1 : 0) + 50 * (zs.flowersRevived.length / zone.flowers.length)) : 0;
+    // zones whose disaster boss is not built yet are restored by flowers alone (matches the lighting)
+    const frac = zone ? zs.flowersRevived.length / zone.flowers.length : 0;
+    const pct = zone ? Math.round(BOSSES[zone.bossId] ? 50 * (zs.bossDefeated ? 1 : 0) + 50 * frac : 100 * frac) : 0;
     const maxHp = player ? player.maxHp : 3;
     const hp = player ? clamp(player.hp, 0, maxHp) : 0;
     return {

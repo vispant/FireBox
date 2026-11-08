@@ -363,11 +363,11 @@ export function drawBackdrop(ctx, W, H, pal, r, camX, t, lite = false) {
   ctx.restore();
 }
 
-// A soft warm pool of light centred on the player's glowing heartwood: the
+// A soft warm pool of light centred on the player's seed-lantern: the
 // dark world stays dark in the distance, but a living light travels with you.
 export function drawPlayerLight(ctx, sx, sy, glow, r) {
   const rad = 160 + glow * 40;
-  const a = (0.24 + (1 - r) * 0.14) * clamp(glow, 0.6, 1.8);
+  const a = (0.15 + (1 - r) * 0.1) * clamp(glow, 0.6, 1.8);
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, rad);
@@ -516,11 +516,15 @@ export function drawGroundPiece(ctx, v, r, ri, aliveAt, pal, t) {
   let runAl = -1;
   const flushRun = () => {
     if (runW <= 0) return;
-    const col = mixRgb(wRgb, lRgb, runAl);
-    ctx.fillStyle = rgbCss(col);
+    // rich dark soil underneath; a turf layer on top that is dry crust while
+    // withered and living grass once restored (not one flat colour block)
+    ctx.fillStyle = rgbCss(mixRgb(wRgb, [62, 46, 31], 0.2 + runAl * 0.55));
     ctx.fillRect(runX, sy, runW + 1, r.h);
-    ctx.fillStyle = rgbCss(mixRgb(col, [168, 212, 112], 0.14 + runAl * 0.26));
-    ctx.fillRect(runX, sy, runW + 1, 5);
+    const turf = mixRgb(mixRgb(wRgb, [150, 128, 92], 0.18), lRgb, runAl);
+    ctx.fillStyle = rgbCss(turf);
+    ctx.fillRect(runX, sy, runW + 1, Math.min(r.h, 9 + runAl * 3));
+    ctx.fillStyle = rgbCss(mixRgb(turf, [190, 228, 128], 0.18 + runAl * 0.3));
+    ctx.fillRect(runX, sy, runW + 1, 3.5);
   };
   for (let off = first; off < r.w && sx + off < v.W + 30; off += SEG) {
     const segW = Math.min(SEG, r.w - off);

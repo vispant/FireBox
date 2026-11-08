@@ -8,8 +8,8 @@
 // head. Everything is a pure function of its inputs; local space is feet at
 // y=0 and +x = facing direction.
 
-import { TAU, clamp, lerp, easeOutCubic, seededRand, hexToRgb, mixRgb, drawContactShadow } from "./understoryArt.js?v=1";
-import { organicLimb, ik2, leaf, smoothThrough } from "./understorySylvan.js?v=1";
+import { TAU, clamp, lerp, easeOutCubic, seededRand, hexToRgb, mixRgb, drawContactShadow } from "./understoryArt.js?v=2";
+import { organicLimb, ik2, leaf, smoothThrough } from "./understoryRig.js?v=1";
 
 // ---------------------------------------------------------------------------
 // helpers

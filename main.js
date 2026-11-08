@@ -14,7 +14,7 @@ import { createPostProcessor } from "./shaderPost.js?v=4";
 import { createEmberAnteGame } from "./emberAnte.js?v=8";
 import { createBlasterRushGame } from "./blasterGame.js?v=1";
 import { createNovaStrikeGame } from "./novaStrike.js?v=2";
-import { createUnderstoryGame } from "./understoryGame.js?v=3";
+import { createUnderstoryGame } from "./understoryGame.js?v=4";
 
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output");
